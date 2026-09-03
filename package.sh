@@ -25,6 +25,7 @@ cp "$PLUGIN_DIR/plugin.py" "$TMP_STAGE/msa_curvemaster/"
 cp "$PLUGIN_DIR/icon.png" "$TMP_STAGE/msa_curvemaster/"
 cp "$PLUGIN_DIR/icon.svg" "$TMP_STAGE/msa_curvemaster/"
 cp "$PLUGIN_DIR/README.md" "$TMP_STAGE/msa_curvemaster/"
+cp "$PLUGIN_DIR/LICENSE" "$TMP_STAGE/msa_curvemaster/"
 
 cp -r "$PLUGIN_DIR/core" "$TMP_STAGE/msa_curvemaster/"
 cp -r "$PLUGIN_DIR/gui" "$TMP_STAGE/msa_curvemaster/"
