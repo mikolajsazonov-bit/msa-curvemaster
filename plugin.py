@@ -11,7 +11,7 @@ import os
 from qgis.PyQt.QtCore import QCoreApplication, Qt
 from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import QAction, QToolBar, QActionGroup, QToolButton
-from qgis.core import QgsWkbTypes, QgsVectorLayer
+from qgis.core import QgsWkbTypes, QgsVectorLayer, QgsMessageLog, Qgis
 
 from .gui.settings_widget import CurveSettingsWidget
 from .tools.bend_segment_tool import BendSegmentTool
@@ -158,8 +158,8 @@ class MSACurveMasterPlugin:
         # Odłączenie sygnałów
         try:
             self.canvas.mapToolSet.disconnect(self._on_map_tool_changed)
-        except Exception:
-            pass
+        except Exception as err:
+            QgsMessageLog.logMessage(f"MapToolSet disconnect: {err}", "MSA: CurveMaster", Qgis.Info)
 
         # Jeśli któreś z naszych narzędzi jest aktywne, zresetuj je
         curr_tool = self.canvas.mapTool()

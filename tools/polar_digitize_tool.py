@@ -32,7 +32,8 @@ from qgis.core import (
     QgsCoordinateTransform,
     QgsProject,
     QgsSnappingConfig,
-    Qgis
+    Qgis,
+    QgsMessageLog
 )
 from .base_curve_tool import BaseCurveTool
 from ..gui.settings_widget import CurveSettingsWidget
@@ -132,8 +133,8 @@ class PolarDigitizeTool(BaseCurveTool):
     def deactivate(self):
         try:
             self.canvas().removeEventFilter(self)
-        except Exception:
-            pass
+        except Exception as err:
+            QgsMessageLog.logMessage(f"Event filter cleanup: {err}", "MSA: CurveMaster", Qgis.Info)
         self._cancel_operation()
         super().deactivate()
 

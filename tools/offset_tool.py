@@ -30,7 +30,8 @@ from qgis.core import (
     QgsFeatureRequest,
     QgsCoordinateTransform,
     QgsProject,
-    Qgis
+    Qgis,
+    QgsMessageLog
 )
 from .base_curve_tool import BaseCurveTool
 from ..gui.settings_widget import CurveSettingsWidget
@@ -107,8 +108,8 @@ class OffsetTool(BaseCurveTool):
     def deactivate(self):
         try:
             self.canvas().removeEventFilter(self)
-        except Exception:
-            pass
+        except Exception as err:
+            QgsMessageLog.logMessage(f"Event filter cleanup: {err}", "MSA: CurveMaster", Qgis.Info)
         if self.overlay:
             self.overlay.hide()
         super().deactivate()
