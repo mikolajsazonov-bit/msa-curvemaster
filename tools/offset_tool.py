@@ -19,7 +19,8 @@ from qgis.PyQt.QtWidgets import (
 from qgis.gui import (
     QgsMapMouseEvent,
     QgsMapCanvas,
-    QgsRubberBand
+    QgsRubberBand,
+    QgsSnapIndicator
 )
 from qgis.core import (
     QgsVectorLayer,
@@ -30,6 +31,7 @@ from qgis.core import (
     QgsFeatureRequest,
     QgsCoordinateTransform,
     QgsProject,
+    QgsSnappingConfig,
     Qgis,
     QgsMessageLog
 )
@@ -95,6 +97,9 @@ class OffsetTool(BaseCurveTool):
         self.highlight_band.setColor(QColor(0, 140, 255, 200))
         self.highlight_band.setWidth(3)
 
+        # Wskaźnik przyciągania QGIS (Snapping)
+        self.snap_indicator = QgsSnapIndicator(self.canvas())
+
         # Stan operacji
         self.target_geom: Optional[QgsGeometry] = None
         self.is_polygon_source: bool = False
@@ -109,6 +114,16 @@ class OffsetTool(BaseCurveTool):
         self.canvas().installEventFilter(self)
         self.canvas().setFocus()
 
+        # Zapewnienie, że przyciąganie (Snapping) w projekcie jest aktywne
+        cfg = QgsProject.instance().snappingConfig()
+        if not cfg.enabled():
+            cfg.setEnabled(True)
+            cfg.setMode(QgsSnappingConfig.AllLayers)
+            cfg.setTypeFlag(QgsSnappingConfig.VertexFlag | QgsSnappingConfig.SegmentFlag | QgsSnappingConfig.MiddleOfSegmentFlag)
+            cfg.setIntersectionSnapping(True)
+            QgsProject.instance().setSnappingConfig(cfg)
+            self.canvas().snappingUtils().setConfig(cfg)
+
     def deactivate(self):
         try:
             self.canvas().removeEventFilter(self)
@@ -116,6 +131,8 @@ class OffsetTool(BaseCurveTool):
             QgsMessageLog.logMessage(f"Event filter cleanup: {err}", "MSA: CurveMaster", Qgis.Info)
         if self.overlay:
             self.overlay.hide()
+        if hasattr(self, 'snap_indicator') and self.snap_indicator:
+            self.snap_indicator.setVisible(False)
         super().deactivate()
 
     def eventFilter(self, obj, event):
@@ -198,10 +215,22 @@ class OffsetTool(BaseCurveTool):
         active_layer = self.active_editable_layer()
         canvas_pt = e.mapPoint()
 
+        # Sprawdzenie przyciągania QGIS (Snapping)
+        match = self.canvas().snappingUtils().snapToMap(e.pos())
+        is_snapped = match.isValid()
+
         if self.state == self.STATE_IDLE:
+            if is_snapped:
+                self.snap_indicator.setMatch(match)
+                self.snap_indicator.setVisible(True)
+                snap_canvas_pt = match.point()
+            else:
+                self.snap_indicator.setVisible(False)
+                snap_canvas_pt = canvas_pt
+
             # Wyszukiwanie obiektu do odsunięcia pod kursorem
             segment_only = bool(e.modifiers() & Qt.ControlModifier)
-            candidate = self._find_candidate_near(canvas_pt, segment_only=segment_only)
+            candidate = self._find_candidate_near(snap_canvas_pt, segment_only=segment_only)
 
             if candidate:
                 cand_geom, is_poly = candidate
@@ -225,13 +254,21 @@ class OffsetTool(BaseCurveTool):
             if not self.target_geom or self.target_geom.isEmpty():
                 return
 
-            layer_pt = self.to_layer_point(active_layer, canvas_pt) if active_layer else canvas_pt
+            if is_snapped:
+                self.snap_indicator.setMatch(match)
+                self.snap_indicator.setVisible(True)
+                eff_canvas_pt = match.point()
+            else:
+                self.snap_indicator.setVisible(False)
+                eff_canvas_pt = canvas_pt
+
+            eff_layer_pt = self.to_layer_point(active_layer, eff_canvas_pt) if active_layer else eff_canvas_pt
 
             # Obliczenie geometrii offsetu w układzie CRS warstwy
             if self.is_polygon_source:
-                off_geom, dist, signed_dist = compute_polygon_offset(self.target_geom, layer_pt)
+                off_geom, dist, signed_dist = compute_polygon_offset(self.target_geom, eff_layer_pt)
             else:
-                off_geom, dist, signed_dist = compute_line_offset(self.target_geom, layer_pt)
+                off_geom, dist, signed_dist = compute_line_offset(self.target_geom, eff_layer_pt)
 
             self.current_distance = dist
             self.current_signed_dist = signed_dist
@@ -240,21 +277,22 @@ class OffsetTool(BaseCurveTool):
             # Aktualizacja czerwonego podglądu na mapie
             self._display_geometry_in_band(self.preview_band, off_geom, active_layer)
 
-            # Rysowanie linii pomocniczej od punktu bazowego do kursora
-            self._update_guide_line(layer_pt, active_layer)
+            # Rysowanie linii pomocniczej od punktu bazowego do punktu przyciągniętego / kursora
+            self._update_guide_line(eff_layer_pt, active_layer)
 
             # Aktualizacja pływającego okienka CAD
             self.overlay.set_current_distance(dist)
             self.overlay.update_position(e.pos(), self.canvas().rect())
             self.overlay.show()
 
+            snap_tag = " [Przyciągnięto]" if is_snapped else ""
             if OffsetTool.last_used_distance is not None and OffsetTool.last_used_distance > 0:
                 self._set_status_tip(
-                    f"MSA Offset: Dystans myszy = {dist:.2f} m. [Enter/Tab = <{OffsetTool.last_used_distance:.2f}> m, Klik = mysz, Esc = Anuluj]"
+                    f"MSA Offset{snap_tag}: Dystans = {dist:.2f} m. [Enter/Tab = <{OffsetTool.last_used_distance:.2f}> m, Klik = zatwierdź, Esc = Anuluj]"
                 )
             else:
                 self._set_status_tip(
-                    f"MSA Offset: Dystans = {dist:.2f} m. Kliknij lub [Enter/Tab], aby zatwierdzić. [Esc = Anuluj]"
+                    f"MSA Offset{snap_tag}: Dystans = {dist:.2f} m. Kliknij lub [Enter/Tab], aby zatwierdzić. [Esc = Anuluj]"
                 )
 
     def canvasPressEvent(self, e: QgsMapMouseEvent):
@@ -276,9 +314,13 @@ class OffsetTool(BaseCurveTool):
 
         canvas_pt = e.mapPoint()
 
+        # Sprawdzenie przyciągania w momencie kliknięcia
+        match = self.canvas().snappingUtils().snapToMap(e.pos())
+        eff_canvas_pt = match.point() if match.isValid() else canvas_pt
+
         if self.state == self.STATE_IDLE:
             segment_only = bool(e.modifiers() & Qt.ControlModifier)
-            candidate = self._find_candidate_near(canvas_pt, segment_only=segment_only)
+            candidate = self._find_candidate_near(eff_canvas_pt, segment_only=segment_only)
             if not candidate:
                 return
 
@@ -296,7 +338,18 @@ class OffsetTool(BaseCurveTool):
             self.canvas().setFocus()
 
         elif self.state == self.STATE_DRAGGING:
-            # Zatwierdzenie bieżącej pozycji kliknięciem myszy
+            # Upewniamy się, że ostateczna geometria i dystans odpowiadają punktowi przyciągniętemu
+            eff_layer_pt = self.to_layer_point(active_layer, eff_canvas_pt) if active_layer else eff_canvas_pt
+
+            if self.is_polygon_source:
+                off_geom, dist, signed_dist = compute_polygon_offset(self.target_geom, eff_layer_pt)
+            else:
+                off_geom, dist, signed_dist = compute_line_offset(self.target_geom, eff_layer_pt)
+
+            self.current_offset_geom = off_geom
+            self.current_distance = dist
+            self.current_signed_dist = signed_dist
+
             self._commit_offset()
 
     def _on_overlay_distance_submitted(self, distance_val: float):
@@ -389,6 +442,8 @@ class OffsetTool(BaseCurveTool):
             self.highlight_band.reset(QgsWkbTypes.LineGeometry)
         if hasattr(self, 'guide_band') and self.guide_band:
             self.guide_band.reset(QgsWkbTypes.LineGeometry)
+        if hasattr(self, 'snap_indicator') and self.snap_indicator:
+            self.snap_indicator.setVisible(False)
 
     def keyPressEvent(self, e):
         if e.key() == Qt.Key_Escape:

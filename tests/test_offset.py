@@ -243,6 +243,20 @@ class TestOffsetUtils(unittest.TestCase):
         saved_geom = next(layer.getFeatures()).geometry()
         self.assertEqual(saved_geom.type(), QgsWkbTypes.LineGeometry)
 
+    def test_offset_tool_snapping_indicator(self):
+        from msa_curvemaster.tools.offset_tool import OffsetTool
+        from msa_curvemaster.gui.settings_widget import CurveSettingsWidget
+        from qgis.gui import QgsMapCanvas
+        from qgis.PyQt.QtWidgets import QApplication
+        app = QApplication.instance() or QApplication([])
+
+        canvas = QgsMapCanvas()
+        settings = CurveSettingsWidget()
+        tool = OffsetTool(canvas, settings)
+
+        self.assertIsNotNone(tool.snap_indicator)
+        self.assertFalse(tool.snap_indicator.isVisible())
+
 
 if __name__ == '__main__':
     unittest.main()
