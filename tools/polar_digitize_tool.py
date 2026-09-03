@@ -834,16 +834,16 @@ class PolarDigitizeTool(BaseCurveTool):
                         vertex_tol = tol_canvas * 0.7
                         if dist_pa <= vertex_tol:
                             chosen_snap_lyr = QgsPointXY(p_a)
-                            snap_type = "Wierzchołek"
+                            snap_type = tr("Vertex", "Wierzchołek")
                         elif dist_pb <= vertex_tol:
                             chosen_snap_lyr = QgsPointXY(p_b)
-                            snap_type = "Wierzchołek"
+                            snap_type = tr("Vertex", "Wierzchołek")
                         elif dist_pmid <= vertex_tol:
                             chosen_snap_lyr = QgsPointXY((p_a.x() + p_b.x()) / 2.0, (p_a.y() + p_b.y()) / 2.0)
-                            snap_type = "Środek odcinka"
+                            snap_type = tr("Segment Midpoint", "Środek odcinka")
                         else:
                             chosen_snap_lyr = min_pt
-                            snap_type = "Krawędź"
+                            snap_type = tr("Edge", "Krawędź")
 
                         pa_t = self._transform_point_to_crs(QgsPointXY(p_a), lyr.crs(), target_crs)
                         pb_t = self._transform_point_to_crs(QgsPointXY(p_b), lyr.crs(), target_crs)

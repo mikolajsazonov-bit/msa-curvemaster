@@ -67,8 +67,10 @@ class BaseCurveTool(QgsMapToolEdit):
             return None
         return layer
 
-    def to_layer_point(self, layer: QgsVectorLayer, canvas_pt: QgsPointXY) -> QgsPointXY:
+    def to_layer_point(self, layer: Optional[QgsVectorLayer], canvas_pt: QgsPointXY) -> QgsPointXY:
         """Konwertuje punkt z układu płótna (canvas CRS) do układu warstwy (layer CRS)."""
+        if layer is None:
+            return QgsPointXY(canvas_pt)
         canvas_crs = self._canvas.mapSettings().destinationCrs()
         layer_crs = layer.crs()
         if canvas_crs == layer_crs or not layer_crs.isValid() or not canvas_crs.isValid():
@@ -79,8 +81,10 @@ class BaseCurveTool(QgsMapToolEdit):
         except Exception:
             return QgsPointXY(canvas_pt)
 
-    def to_canvas_point(self, layer: QgsVectorLayer, layer_pt: QgsPointXY) -> QgsPointXY:
+    def to_canvas_point(self, layer: Optional[QgsVectorLayer], layer_pt: QgsPointXY) -> QgsPointXY:
         """Konwertuje punkt z układu warstwy (layer CRS) do układu płótna (canvas CRS)."""
+        if layer is None:
+            return QgsPointXY(layer_pt)
         canvas_crs = self._canvas.mapSettings().destinationCrs()
         layer_crs = layer.crs()
         if canvas_crs == layer_crs or not layer_crs.isValid() or not canvas_crs.isValid():
@@ -91,8 +95,10 @@ class BaseCurveTool(QgsMapToolEdit):
         except Exception:
             return QgsPointXY(layer_pt)
 
-    def to_layer_rect(self, layer: QgsVectorLayer, canvas_rect: QgsRectangle) -> QgsRectangle:
+    def to_layer_rect(self, layer: Optional[QgsVectorLayer], canvas_rect: QgsRectangle) -> QgsRectangle:
         """Konwertuje prostokąt z układu płótna (canvas CRS) do układu warstwy (layer CRS)."""
+        if layer is None:
+            return QgsRectangle(canvas_rect)
         canvas_crs = self._canvas.mapSettings().destinationCrs()
         layer_crs = layer.crs()
         if canvas_crs == layer_crs or not layer_crs.isValid() or not canvas_crs.isValid():
@@ -103,8 +109,10 @@ class BaseCurveTool(QgsMapToolEdit):
         except Exception:
             return QgsRectangle(canvas_rect)
 
-    def to_canvas_points_list(self, layer: QgsVectorLayer, pts: List[Point2D]) -> List[QgsPointXY]:
+    def to_canvas_points_list(self, layer: Optional[QgsVectorLayer], pts: List[Point2D]) -> List[QgsPointXY]:
         """Konwertuje listę punktów (x, y) z układu warstwy do listy QgsPointXY w układzie płótna."""
+        if layer is None:
+            return [QgsPointXY(p[0], p[1]) for p in pts]
         canvas_crs = self._canvas.mapSettings().destinationCrs()
         layer_crs = layer.crs()
         if canvas_crs == layer_crs or not layer_crs.isValid() or not canvas_crs.isValid():
