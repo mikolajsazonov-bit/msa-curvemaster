@@ -1,0 +1,14 @@
+[general]
+name=MSA: CurveMaster
+qgisMinimumVersion=3.0
+qgisMaximumVersion=3.99
+description=Narzędzie CAD do interaktywnej korekty kształtów, generowania łuków, prostego offsetu oraz rysowania z Polar Trackingiem
+about=Wtyczka umożliwia precyzyjne wyginanie prostych odcinków w łuki, zaokrąglanie narożników (fillet), prosty offset równoległy CAD oraz rysowanie linii i poligonów ze śledzeniem biegunowym (Polar Tracking) i przyciąganiem do kątów względnych i bezwzględnych. Posiada asystenta w tle dla narzędzi Rozdziel i Zmień kształt, pływające okienka CAD z wpisywaniem wartości z klawiatury oraz pełną obsługę Undo/Redo.
+version=1.2.0
+author=Mikołaj Sazonov
+email=curvemaster@sazonov.work
+category=Vector
+icon=icon.png
+experimental=False
+deprecated=False
+tags=curves, arc, fillet, offset, parallel, polar, tracking, angle, cad, geometry, polyline, polygon, digitizing, vector

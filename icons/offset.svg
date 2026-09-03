@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <rect width="30" height="30" x="1" y="1" rx="6" fill="#f8f9fa" stroke="#ced4da" stroke-width="1.2"/>
+  <!-- Original baseline (dashed line) -->
+  <path d="M 5 22 L 20 22 L 27 15" stroke="#adb5bd" stroke-width="1.8" stroke-dasharray="2.5,2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Offset parallel line (solid blue) -->
+  <path d="M 5 13 L 17 13 L 24 6" stroke="#0d6efd" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <!-- Offset distance indicator / arrow -->
+  <path d="M 11 21 L 11 14" stroke="#dc3545" stroke-width="1.5" stroke-linecap="round"/>
+  <path d="M 8.5 16.5 L 11 14 L 13.5 16.5" stroke="#dc3545" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <!-- Distance node dots -->
+  <circle cx="11" cy="21" r="1.5" fill="#adb5bd"/>
+  <circle cx="11" cy="14" r="1.5" fill="#dc3545"/>
+  <!-- End vertices on offset line -->
+  <circle cx="5" cy="13" r="2" fill="#0d6efd" stroke="#ffffff" stroke-width="0.8"/>
+  <circle cx="24" cy="6" r="2" fill="#0d6efd" stroke="#ffffff" stroke-width="0.8"/>
+</svg>

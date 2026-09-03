@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
+  <defs>
+    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#007acc"/>
+      <stop offset="100%" stop-color="#00c6ff"/>
+    </linearGradient>
+  </defs>
+  <!-- Background circle -->
+  <rect width="46" height="46" x="1" y="1" rx="10" fill="#ffffff" stroke="#d0d0d0" stroke-width="1.5"/>
+  <!-- Original straight dashed chord -->
+  <path d="M 8 36 L 40 36" stroke="#999999" stroke-width="2" stroke-dasharray="3,3" fill="none"/>
+  <!-- Curved arc -->
+  <path d="M 8 36 Q 24 8 40 36" stroke="url(#grad)" stroke-width="4" stroke-linecap="round" fill="none"/>
+  <!-- Intermediate nodes on arc -->
+  <circle cx="8" cy="36" r="3.5" fill="#007acc" stroke="#ffffff" stroke-width="1.5"/>
+  <circle cx="16" cy="22" r="2.5" fill="#ff7a00" stroke="#ffffff" stroke-width="1"/>
+  <circle cx="24" cy="15" r="3" fill="#ff7a00" stroke="#ffffff" stroke-width="1.5"/>
+  <circle cx="32" cy="22" r="2.5" fill="#ff7a00" stroke="#ffffff" stroke-width="1"/>
+  <circle cx="40" cy="36" r="3.5" fill="#007acc" stroke="#ffffff" stroke-width="1.5"/>
+  <!-- Edit handle arrow -->
+  <path d="M 24 25 L 24 16 M 21 19 L 24 16 L 27 19" stroke="#ff3b30" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+</svg>

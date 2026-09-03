@@ -1,0 +1,298 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+MSA: CurveMaster - Kompaktowy pasek ustawień parametrów wtyczki.
+Autor: Mikołaj Sazonov
+"""
+
+from typing import Optional
+from qgis.PyQt.QtCore import Qt, pyqtSignal
+from qgis.PyQt.QtWidgets import (
+    QWidget,
+    QHBoxLayout,
+    QLabel,
+    QComboBox,
+    QDoubleSpinBox,
+    QCheckBox,
+    QFrame,
+    QMenu,
+    QWidgetAction,
+    QToolButton
+)
+try:
+    from ..core.geometry_utils import SamplingMode
+    from ..core.polar_state import PolarState, PolarAngleMeasurement, POLAR_INCREMENT_PRESETS
+except (ImportError, ValueError):
+    from core.geometry_utils import SamplingMode
+    from core.polar_state import PolarState, PolarAngleMeasurement, POLAR_INCREMENT_PRESETS
+
+
+class CurveSettingsWidget(QWidget):
+    """
+    Kompaktowy widget paska narzędzi zawierający kontrolki do wyboru trybu próbkowania łuków,
+    kroku podziału oraz parametrów zaokrąglania narożników.
+    Może dynamicznie rozwijać się w zależności od aktywnego narzędzia.
+    """
+
+    settingsChanged = pyqtSignal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._current_mode: Optional[str] = None
+        self._init_ui()
+        # Domyślnie widget jest zwinięty/ukryty na pasku narzędzi
+        self.hide()
+
+    def _init_ui(self):
+        main_layout = QHBoxLayout(self)
+        main_layout.setContentsMargins(2, 0, 2, 0)
+        main_layout.setSpacing(4)
+
+        # Kontener próbkowania (używany zarówno przy wyginaniu, jak i zaokrąglaniu)
+        self.sampling_container = QWidget(self)
+        samp_layout = QHBoxLayout(self.sampling_container)
+        samp_layout.setContentsMargins(0, 0, 0, 0)
+        samp_layout.setSpacing(4)
+
+        lbl_mode = QLabel("Próbkowanie:")
+        lbl_mode.setStyleSheet("font-weight: 500; font-size: 11px;")
+        self.combo_mode = QComboBox()
+        self.combo_mode.addItem("Krok lin. (m)", SamplingMode.LINEAR_STEP)
+        self.combo_mode.addItem("Krok kąt. (°)", SamplingMode.ANGULAR_STEP)
+        self.combo_mode.addItem("Strzałka (m)", SamplingMode.MAX_SAGITTA)
+        self.combo_mode.setToolTip("Metoda dyskretyzacji łuku na proste odcinki:\n- Krok lin.: stała długość cięciwy (m)\n- Krok kąt.: podział kąta środkowego (°)\n- Strzałka: maks. odchyłka cięciwy od okręgu (m)")
+        self.combo_mode.currentIndexChanged.connect(self._on_mode_changed)
+
+        self.spin_step = QDoubleSpinBox()
+        self.spin_step.setDecimals(2)
+        self.spin_step.setRange(0.01, 10000.0)
+        self.spin_step.setValue(1.0)
+        self.spin_step.setSuffix(" m")
+        self.spin_step.setToolTip("Wartość kroku próbkowania dla wybranego trybu")
+        self.spin_step.valueChanged.connect(lambda: self.settingsChanged.emit())
+
+        samp_layout.addWidget(lbl_mode)
+        samp_layout.addWidget(self.combo_mode)
+        samp_layout.addWidget(self.spin_step)
+        main_layout.addWidget(self.sampling_container)
+
+        # Kontener zaokrąglania narożników (widoczny tylko przy narzędziu Fillet)
+        self.fillet_container = QWidget(self)
+        fillet_layout = QHBoxLayout(self.fillet_container)
+        fillet_layout.setContentsMargins(0, 0, 0, 0)
+        fillet_layout.setSpacing(4)
+
+        self.sep = QFrame()
+        self.sep.setFrameShape(QFrame.VLine)
+        self.sep.setFrameShadow(QFrame.Sunken)
+        fillet_layout.addWidget(self.sep)
+
+        lbl_fillet = QLabel("Promień:")
+        lbl_fillet.setStyleSheet("font-weight: 500; font-size: 11px;")
+        self.spin_radius = QDoubleSpinBox()
+        self.spin_radius.setDecimals(2)
+        self.spin_radius.setRange(0.05, 10000.0)
+        self.spin_radius.setValue(5.0)
+        self.spin_radius.setSuffix(" m")
+        self.spin_radius.setToolTip("Promień zaokrąglenia narożnika (fillet)")
+        self.spin_radius.valueChanged.connect(lambda: self.settingsChanged.emit())
+
+        self.chk_interactive = QCheckBox("Interaktywny")
+        self.chk_interactive.setChecked(True)
+        self.chk_interactive.setToolTip("Zaznacz, aby dynamicznie ustalać promień myszą i okienkiem CAD.\nOdznacz, aby zaokrąglać stałą wartością promienia z pola obok.")
+        self.chk_interactive.toggled.connect(self._on_interactive_toggled)
+
+        fillet_layout.addWidget(lbl_fillet)
+        fillet_layout.addWidget(self.spin_radius)
+        fillet_layout.addWidget(self.chk_interactive)
+        main_layout.addWidget(self.fillet_container)
+
+        # Kontener polar trackingu (widoczny przy narzędziu PolarDigitizeTool)
+        self.polar_container = QWidget(self)
+        polar_layout = QHBoxLayout(self.polar_container)
+        polar_layout.setContentsMargins(0, 0, 0, 0)
+        polar_layout.setSpacing(4)
+
+        lbl_polar_inc = QLabel("Krok:")
+        lbl_polar_inc.setStyleSheet("font-weight: 500; font-size: 11px;")
+        self.combo_polar_inc = QComboBox()
+        for step in POLAR_INCREMENT_PRESETS:
+            self.combo_polar_inc.addItem(f"{step:g}°", step)
+        self.combo_polar_inc.setToolTip("Krok kątowy przyciągania polarnego")
+        self.combo_polar_inc.currentIndexChanged.connect(self._on_polar_inc_changed)
+
+        self.combo_polar_mode = QComboBox()
+        self.combo_polar_mode.addItem("Względny", PolarAngleMeasurement.RELATIVE)
+        self.combo_polar_mode.addItem("Bezwzględny", PolarAngleMeasurement.ABSOLUTE)
+        self.combo_polar_mode.setToolTip("Baza pomiaru kąta:\n- Względny: do poprzedniego segmentu / krawędzi początkowej\n- Bezwzględny: do układu współrzędnych")
+        self.combo_polar_mode.currentIndexChanged.connect(self._on_polar_measurement_changed)
+
+        self.btn_polar_settings = QToolButton()
+        self.btn_polar_settings.setText("⚙")
+        self.btn_polar_settings.setToolTip("Otwórz okno zaawansowanych ustawień Polar Trackingu (własne kąty)")
+        self.btn_polar_settings.clicked.connect(self._open_polar_dialog)
+
+        polar_layout.addWidget(lbl_polar_inc)
+        polar_layout.addWidget(self.combo_polar_inc)
+        polar_layout.addWidget(self.combo_polar_mode)
+        polar_layout.addWidget(self.btn_polar_settings)
+        main_layout.addWidget(self.polar_container)
+
+    def set_tool_mode(self, mode: Optional[str]):
+        """
+        Zmienia tryb wyświetlania paska w zależności od aktywnego narzędzia:
+        - 'bend': rozwija tylko opcje próbkowania
+        - 'fillet': rozwija opcje próbkowania oraz parametry zaokrąglania
+        - 'polar': rozwija opcje kroku kąta i bazy pomiaru polarnego
+        - None / 'none': zwija/ukrywa cały panel ustawień z paska narzędzi
+        """
+        self._current_mode = mode
+        if mode == 'bend':
+            self.sampling_container.setVisible(True)
+            self.fillet_container.setVisible(False)
+            self.polar_container.setVisible(False)
+            self.setVisible(True)
+        elif mode == 'fillet':
+            self.sampling_container.setVisible(True)
+            self.fillet_container.setVisible(True)
+            self.polar_container.setVisible(False)
+            self.setVisible(True)
+        elif mode == 'polar':
+            self.sampling_container.setVisible(False)
+            self.fillet_container.setVisible(False)
+            self.polar_container.setVisible(True)
+            self._sync_polar_ui_from_state()
+            self.setVisible(True)
+        else:
+            self.setVisible(False)
+
+    def _sync_polar_ui_from_state(self):
+        state = PolarState.instance()
+        idx_inc = self.combo_polar_inc.findData(state.increment_angle)
+        if idx_inc >= 0:
+            self.combo_polar_inc.blockSignals(True)
+            self.combo_polar_inc.setCurrentIndex(idx_inc)
+            self.combo_polar_inc.blockSignals(False)
+
+        idx_mode = self.combo_polar_mode.findData(state.measurement_mode)
+        if idx_mode >= 0:
+            self.combo_polar_mode.blockSignals(True)
+            self.combo_polar_mode.setCurrentIndex(idx_mode)
+            self.combo_polar_mode.blockSignals(False)
+
+    def _on_polar_inc_changed(self, index: int):
+        val = self.combo_polar_inc.itemData(index)
+        if val is not None:
+            PolarState.instance().increment_angle = float(val)
+
+    def _on_polar_measurement_changed(self, index: int):
+        val = self.combo_polar_mode.itemData(index)
+        if val is not None:
+            PolarState.instance().measurement_mode = val
+
+    def _open_polar_dialog(self):
+        try:
+            from .polar_settings_dialog import PolarSettingsDialog
+        except (ImportError, ValueError):
+            from gui.polar_settings_dialog import PolarSettingsDialog
+        dlg = PolarSettingsDialog(self)
+        if dlg.exec_():
+            self._sync_polar_ui_from_state()
+
+    def _on_mode_changed(self, index: int):
+        mode = self.combo_mode.itemData(index)
+        if mode == SamplingMode.LINEAR_STEP:
+            self.spin_step.setSuffix(" m")
+            self.spin_step.setDecimals(2)
+            self.spin_step.setRange(0.05, 1000.0)
+            self.spin_step.setValue(1.0)
+        elif mode == SamplingMode.ANGULAR_STEP:
+            self.spin_step.setSuffix(" °")
+            self.spin_step.setDecimals(1)
+            self.spin_step.setRange(0.5, 90.0)
+            self.spin_step.setValue(5.0)
+        elif mode == SamplingMode.MAX_SAGITTA:
+            self.spin_step.setSuffix(" m")
+            self.spin_step.setDecimals(3)
+            self.spin_step.setRange(0.001, 10.0)
+            self.spin_step.setValue(0.02)
+
+        self.settingsChanged.emit()
+
+    def _on_interactive_toggled(self, checked: bool):
+        self.spin_radius.setEnabled(not checked)
+        self.settingsChanged.emit()
+
+    def sampling_mode(self) -> SamplingMode:
+        return self.combo_mode.currentData()
+
+    def step_value(self) -> float:
+        return self.spin_step.value()
+
+    def fillet_radius(self) -> float:
+        return self.spin_radius.value()
+
+    def is_interactive_fillet(self) -> bool:
+        return self.chk_interactive.isChecked()
+
+    def create_dropdown_menu(self, tool_name: str, parent=None) -> QMenu:
+        """
+        Tworzy rozwijane menu (popup menu dla QToolButton.MenuButtonPopup)
+        umożliwiające szybki wybór metody próbkowania i wartości.
+        """
+        menu = QMenu(parent or self)
+        menu.setTitle("Ustawienia próbkowania")
+
+        # Tytuł sekcji próbkowania
+        lbl_header = QLabel("  Metoda próbkowania łuku:")
+        lbl_header.setStyleSheet("font-weight: bold; color: #6c757d; font-size: 11px; padding: 4px 6px;")
+        act_header = QWidgetAction(menu)
+        act_header.setDefaultWidget(lbl_header)
+        menu.addAction(act_header)
+
+        # Opcje wyboru trybu
+        modes = [
+            ("Długość odcinka (m)", SamplingMode.LINEAR_STEP),
+            ("Krok kątowy (°)", SamplingMode.ANGULAR_STEP),
+            ("Odchyłka/Strzałka (m)", SamplingMode.MAX_SAGITTA),
+        ]
+
+        mode_actions = []
+        for label, smode in modes:
+            act = menu.addAction(label)
+            act.setCheckable(True)
+            act.setChecked(self.sampling_mode() == smode)
+            # Obsługa kliknięcia w menu
+            def make_handler(m=smode):
+                return lambda: self._set_mode_from_menu(m)
+            act.triggered.connect(make_handler(smode))
+            mode_actions.append((act, smode))
+
+        act_inter = None
+        if tool_name == 'fillet':
+            menu.addSeparator()
+            lbl_fillet_hdr = QLabel("  Parametry zaokrąglenia:")
+            lbl_fillet_hdr.setStyleSheet("font-weight: bold; color: #6c757d; font-size: 11px; padding: 4px 6px;")
+            act_fillet_hdr = QWidgetAction(menu)
+            act_fillet_hdr.setDefaultWidget(lbl_fillet_hdr)
+            menu.addAction(act_fillet_hdr)
+
+            act_inter = menu.addAction("Tryb interaktywny (mysz + CAD)")
+            act_inter.setCheckable(True)
+            act_inter.setChecked(self.is_interactive_fillet())
+            act_inter.toggled.connect(self.chk_interactive.setChecked)
+
+        def on_about_to_show():
+            curr_m = self.sampling_mode()
+            for a, sm in mode_actions:
+                a.setChecked(curr_m == sm)
+            if act_inter is not None:
+                act_inter.setChecked(self.is_interactive_fillet())
+
+        menu.aboutToShow.connect(on_about_to_show)
+        return menu
+
+    def _set_mode_from_menu(self, smode: SamplingMode):
+        idx = self.combo_mode.findData(smode)
+        if idx >= 0:
+            self.combo_mode.setCurrentIndex(idx)

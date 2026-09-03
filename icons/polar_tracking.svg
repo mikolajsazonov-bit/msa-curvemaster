@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <rect width="30" height="30" x="1" y="1" rx="6" fill="#f8f9fa" stroke="#ced4da" stroke-width="1.2"/>
+  <!-- Base reference line -->
+  <path d="M 6 24 L 26 24" stroke="#6c757d" stroke-width="2" stroke-linecap="round"/>
+  <!-- Polar angle arc (e.g. 45 deg) -->
+  <path d="M 16 24 A 10 10 0 0 0 13.07 16.93" stroke="#f57c00" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+  <!-- Polar tracking ray (green dashed ray) -->
+  <path d="M 6 24 L 25 5" stroke="#00c853" stroke-width="2.2" stroke-dasharray="3,1.8" stroke-linecap="round"/>
+  <!-- Angle vertex node -->
+  <circle cx="6" cy="24" r="2.5" fill="#0d6efd" stroke="#ffffff" stroke-width="0.8"/>
+  <!-- Base line end node -->
+  <circle cx="26" cy="24" r="1.8" fill="#6c757d"/>
+  <!-- Target snapped cursor point on polar ray -->
+  <circle cx="21" cy="9" r="2.8" fill="#00c853" stroke="#ffffff" stroke-width="0.8"/>
+</svg>
