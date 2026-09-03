@@ -237,7 +237,7 @@ class TestPolarTracking(unittest.TestCase):
         self.assertIsNotNone(menu)
 
         menu_titles = [m.title() for m in menu.findChildren(type(menu))]
-        self.assertIn("Przyciąganie (Snapping)", menu_titles)
+        self.assertTrue(any("Snapping" in t or "Przyciąganie" in t for t in menu_titles))
 
     def test_ray_segment_intersection_math(self):
         # 1. Prostopadłe przecięcie: promień na północ (90°), pozioma linia na y=25

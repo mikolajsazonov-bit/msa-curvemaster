@@ -29,6 +29,7 @@ try:
         POLAR_INCREMENT_PRESETS,
         format_preset_label
     )
+    from ..core.i18n import tr
 except (ImportError, ValueError):
     from core.polar_state import (
         PolarState,
@@ -36,6 +37,7 @@ except (ImportError, ValueError):
         POLAR_INCREMENT_PRESETS,
         format_preset_label
     )
+    from core.i18n import tr
 
 
 class PolarSettingsDialog(QDialog):
@@ -46,7 +48,7 @@ class PolarSettingsDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.state = PolarState.instance()
-        self.setWindowTitle("Ustawienia śledzenia biegunowego (Polar Tracking)")
+        self.setWindowTitle(tr("Polar Tracking Settings", "Ustawienia śledzenia biegunowego"))
         self.setMinimumWidth(440)
         self._init_ui()
         self._load_from_state()
@@ -56,20 +58,20 @@ class PolarSettingsDialog(QDialog):
         main_layout.setSpacing(12)
 
         # 1. Główny przełącznik Polar Tracking On/Off
-        self.chk_enabled = QCheckBox("Włącz śledzenie biegunowe (Polar Tracking On)")
+        self.chk_enabled = QCheckBox(tr("Polar Tracking On", "Włącz śledzenie biegunowe (Polar Tracking On)"))
         self.chk_enabled.setStyleSheet("font-weight: bold; font-size: 13px;")
         main_layout.addWidget(self.chk_enabled)
 
         grid_layout = QHBoxLayout()
 
         # 2. Grupa kątów (Lewa kolumna)
-        grp_angles = QGroupBox("Ustawienia kątów (Polar Angle Settings)")
+        grp_angles = QGroupBox(tr("Polar Angle Settings", "Ustawienia kątów (Polar Angle Settings)"))
         vbox_angles = QVBoxLayout(grp_angles)
         vbox_angles.setSpacing(10)
 
         # Krok kąta (Increment angle)
         h_inc = QHBoxLayout()
-        lbl_inc = QLabel("Krok kąta:")
+        lbl_inc = QLabel(tr("Increment angle:", "Krok kąta:"))
         self.combo_increment = QComboBox()
         for step in POLAR_INCREMENT_PRESETS:
             self.combo_increment.addItem(format_preset_label(step), step)
@@ -78,7 +80,7 @@ class PolarSettingsDialog(QDialog):
         vbox_angles.addLayout(h_inc)
 
         # Dodatkowe kąty (Additional angles)
-        self.chk_additional = QCheckBox("Dodatkowe kąty (Additional angles)")
+        self.chk_additional = QCheckBox(tr("Additional angles", "Dodatkowe kąty (Additional angles)"))
         vbox_angles.addWidget(self.chk_additional)
 
         h_list = QHBoxLayout()
@@ -93,9 +95,9 @@ class PolarSettingsDialog(QDialog):
         self.spin_new_angle.setSuffix("°")
         self.spin_new_angle.setValue(147.0)
 
-        self.btn_add = QPushButton("Dodaj")
+        self.btn_add = QPushButton(tr("Add", "Dodaj"))
         self.btn_add.clicked.connect(self._on_add_angle)
-        self.btn_delete = QPushButton("Usuń")
+        self.btn_delete = QPushButton(tr("Delete", "Usuń"))
         self.btn_delete.clicked.connect(self._on_delete_angle)
 
         v_btns.addWidget(self.spin_new_angle)
@@ -108,12 +110,18 @@ class PolarSettingsDialog(QDialog):
         grid_layout.addWidget(grp_angles, 3)
 
         # 3. Prawa kolumna (Measurement: Relative vs Absolute)
-        grp_measure = QGroupBox("Pomiar kąta polarnego (Measurement)")
+        grp_measure = QGroupBox(tr("Polar Angle Measurement", "Pomiar kąta polarnego (Measurement)"))
         vbox_measure = QVBoxLayout(grp_measure)
         vbox_measure.setSpacing(10)
 
-        self.radio_absolute = QRadioButton("Kąt bezwzględny (Absolute)\n(układ współrzędnych / ekran)")
-        self.radio_relative = QRadioButton("Kąt względny (Relative)\n(do krawędzi początkowej / segmentu)")
+        self.radio_absolute = QRadioButton(tr(
+            "Absolute\n(to map coordinate system)",
+            "Kąt bezwzględny (Absolute)\n(układ współrzędnych / ekran)"
+        ))
+        self.radio_relative = QRadioButton(tr(
+            "Relative\n(to previous segment / starting edge)",
+            "Kąt względny (Relative)\n(do krawędzi początkowej / segmentu)"
+        ))
 
         self.btn_group_mode = QButtonGroup(self)
         self.btn_group_mode.addButton(self.radio_absolute, 0)

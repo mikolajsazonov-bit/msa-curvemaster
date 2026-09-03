@@ -35,3 +35,4 @@ from .polar_state import (
     format_preset_label
 )
 from .polar_background_manager import PolarBackgroundManager
+from .i18n import tr, is_polish_locale

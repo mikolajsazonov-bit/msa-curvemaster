@@ -22,9 +22,11 @@ from qgis.PyQt.QtWidgets import (
 try:
     from ..core.geometry_utils import SamplingMode
     from ..core.polar_state import PolarState, PolarAngleMeasurement, POLAR_INCREMENT_PRESETS
+    from ..core.i18n import tr
 except (ImportError, ValueError):
     from core.geometry_utils import SamplingMode
     from core.polar_state import PolarState, PolarAngleMeasurement, POLAR_INCREMENT_PRESETS
+    from core.i18n import tr
 
 
 class CurveSettingsWidget(QWidget):
@@ -54,13 +56,16 @@ class CurveSettingsWidget(QWidget):
         samp_layout.setContentsMargins(0, 0, 0, 0)
         samp_layout.setSpacing(4)
 
-        lbl_mode = QLabel("Próbkowanie:")
+        lbl_mode = QLabel(tr("Sampling:", "Próbkowanie:"))
         lbl_mode.setStyleSheet("font-weight: 500; font-size: 11px;")
         self.combo_mode = QComboBox()
-        self.combo_mode.addItem("Krok lin. (m)", SamplingMode.LINEAR_STEP)
-        self.combo_mode.addItem("Krok kąt. (°)", SamplingMode.ANGULAR_STEP)
-        self.combo_mode.addItem("Strzałka (m)", SamplingMode.MAX_SAGITTA)
-        self.combo_mode.setToolTip("Metoda dyskretyzacji łuku na proste odcinki:\n- Krok lin.: stała długość cięciwy (m)\n- Krok kąt.: podział kąta środkowego (°)\n- Strzałka: maks. odchyłka cięciwy od okręgu (m)")
+        self.combo_mode.addItem(tr("Linear step (m)", "Krok lin. (m)"), SamplingMode.LINEAR_STEP)
+        self.combo_mode.addItem(tr("Angular step (°)", "Krok kąt. (°)"), SamplingMode.ANGULAR_STEP)
+        self.combo_mode.addItem(tr("Max sagitta (m)", "Strzałka (m)"), SamplingMode.MAX_SAGITTA)
+        self.combo_mode.setToolTip(tr(
+            "Arc discretization method:\n- Linear: constant chord length (m)\n- Angular: central angle division (°)\n- Sagitta: max arc-chord deviation (m)",
+            "Metoda dyskretyzacji łuku na proste odcinki:\n- Krok lin.: stała długość cięciwy (m)\n- Krok kąt.: podział kąta środkowego (°)\n- Strzałka: maks. odchyłka cięciwy od okręgu (m)"
+        ))
         self.combo_mode.currentIndexChanged.connect(self._on_mode_changed)
 
         self.spin_step = QDoubleSpinBox()
@@ -68,7 +73,7 @@ class CurveSettingsWidget(QWidget):
         self.spin_step.setRange(0.01, 10000.0)
         self.spin_step.setValue(1.0)
         self.spin_step.setSuffix(" m")
-        self.spin_step.setToolTip("Wartość kroku próbkowania dla wybranego trybu")
+        self.spin_step.setToolTip(tr("Sampling step value for selected mode", "Wartość kroku próbkowania dla wybranego trybu"))
         self.spin_step.valueChanged.connect(lambda: self.settingsChanged.emit())
 
         samp_layout.addWidget(lbl_mode)
@@ -87,19 +92,22 @@ class CurveSettingsWidget(QWidget):
         self.sep.setFrameShadow(QFrame.Sunken)
         fillet_layout.addWidget(self.sep)
 
-        lbl_fillet = QLabel("Promień:")
+        lbl_fillet = QLabel(tr("Radius:", "Promień:"))
         lbl_fillet.setStyleSheet("font-weight: 500; font-size: 11px;")
         self.spin_radius = QDoubleSpinBox()
         self.spin_radius.setDecimals(2)
         self.spin_radius.setRange(0.05, 10000.0)
         self.spin_radius.setValue(5.0)
         self.spin_radius.setSuffix(" m")
-        self.spin_radius.setToolTip("Promień zaokrąglenia narożnika (fillet)")
+        self.spin_radius.setToolTip(tr("Corner fillet radius", "Promień zaokrąglenia narożnika (fillet)"))
         self.spin_radius.valueChanged.connect(lambda: self.settingsChanged.emit())
 
-        self.chk_interactive = QCheckBox("Interaktywny")
+        self.chk_interactive = QCheckBox(tr("Interactive", "Interaktywny"))
         self.chk_interactive.setChecked(True)
-        self.chk_interactive.setToolTip("Zaznacz, aby dynamicznie ustalać promień myszą i okienkiem CAD.\nOdznacz, aby zaokrąglać stałą wartością promienia z pola obok.")
+        self.chk_interactive.setToolTip(tr(
+            "Check to dynamically set radius with mouse and CAD HUD overlay.\nUncheck to use fixed radius from input box.",
+            "Zaznacz, aby dynamicznie ustalać promień myszą i okienkiem CAD.\nOdznacz, aby zaokrąglać stałą wartością promienia z pola obok."
+        ))
         self.chk_interactive.toggled.connect(self._on_interactive_toggled)
 
         fillet_layout.addWidget(lbl_fillet)
@@ -113,23 +121,29 @@ class CurveSettingsWidget(QWidget):
         polar_layout.setContentsMargins(0, 0, 0, 0)
         polar_layout.setSpacing(4)
 
-        lbl_polar_inc = QLabel("Krok:")
+        lbl_polar_inc = QLabel(tr("Step:", "Krok:"))
         lbl_polar_inc.setStyleSheet("font-weight: 500; font-size: 11px;")
         self.combo_polar_inc = QComboBox()
         for step in POLAR_INCREMENT_PRESETS:
             self.combo_polar_inc.addItem(f"{step:g}°", step)
-        self.combo_polar_inc.setToolTip("Krok kątowy przyciągania polarnego")
+        self.combo_polar_inc.setToolTip(tr("Polar tracking increment angle", "Krok kątowy przyciągania polarnego"))
         self.combo_polar_inc.currentIndexChanged.connect(self._on_polar_inc_changed)
 
         self.combo_polar_mode = QComboBox()
-        self.combo_polar_mode.addItem("Względny", PolarAngleMeasurement.RELATIVE)
-        self.combo_polar_mode.addItem("Bezwzględny", PolarAngleMeasurement.ABSOLUTE)
-        self.combo_polar_mode.setToolTip("Baza pomiaru kąta:\n- Względny: do poprzedniego segmentu / krawędzi początkowej\n- Bezwzględny: do układu współrzędnych")
+        self.combo_polar_mode.addItem(tr("Relative", "Względny"), PolarAngleMeasurement.RELATIVE)
+        self.combo_polar_mode.addItem(tr("Absolute", "Bezwzględny"), PolarAngleMeasurement.ABSOLUTE)
+        self.combo_polar_mode.setToolTip(tr(
+            "Angle measurement base:\n- Relative: to previous segment / starting edge\n- Absolute: to map coordinate system",
+            "Baza pomiaru kąta:\n- Względny: do poprzedniego segmentu / krawędzi początkowej\n- Bezwzględny: do układu współrzędnych"
+        ))
         self.combo_polar_mode.currentIndexChanged.connect(self._on_polar_measurement_changed)
 
         self.btn_polar_settings = QToolButton()
         self.btn_polar_settings.setText("⚙")
-        self.btn_polar_settings.setToolTip("Otwórz okno zaawansowanych ustawień Polar Trackingu (własne kąty)")
+        self.btn_polar_settings.setToolTip(tr(
+            "Open Polar Tracking settings (custom angles & options)",
+            "Otwórz okno zaawansowanych ustawień Polar Trackingu (własne kąty)"
+        ))
         self.btn_polar_settings.clicked.connect(self._open_polar_dialog)
 
         polar_layout.addWidget(lbl_polar_inc)
@@ -241,10 +255,10 @@ class CurveSettingsWidget(QWidget):
         umożliwiające szybki wybór metody próbkowania i wartości.
         """
         menu = QMenu(parent or self)
-        menu.setTitle("Ustawienia próbkowania")
+        menu.setTitle(tr("Sampling Settings", "Ustawienia próbkowania"))
 
         # Tytuł sekcji próbkowania
-        lbl_header = QLabel("  Metoda próbkowania łuku:")
+        lbl_header = QLabel(tr("  Arc sampling method:", "  Metoda próbkowania łuku:"))
         lbl_header.setStyleSheet("font-weight: bold; color: #6c757d; font-size: 11px; padding: 4px 6px;")
         act_header = QWidgetAction(menu)
         act_header.setDefaultWidget(lbl_header)
@@ -252,9 +266,9 @@ class CurveSettingsWidget(QWidget):
 
         # Opcje wyboru trybu
         modes = [
-            ("Długość odcinka (m)", SamplingMode.LINEAR_STEP),
-            ("Krok kątowy (°)", SamplingMode.ANGULAR_STEP),
-            ("Odchyłka/Strzałka (m)", SamplingMode.MAX_SAGITTA),
+            (tr("Chord length (m)", "Długość odcinka (m)"), SamplingMode.LINEAR_STEP),
+            (tr("Angular step (°)", "Krok kątowy (°)"), SamplingMode.ANGULAR_STEP),
+            (tr("Max sagitta (m)", "Odchyłka/Strzałka (m)"), SamplingMode.MAX_SAGITTA),
         ]
 
         mode_actions = []
@@ -271,13 +285,13 @@ class CurveSettingsWidget(QWidget):
         act_inter = None
         if tool_name == 'fillet':
             menu.addSeparator()
-            lbl_fillet_hdr = QLabel("  Parametry zaokrąglenia:")
+            lbl_fillet_hdr = QLabel(tr("  Fillet options:", "  Parametry zaokrąglenia:"))
             lbl_fillet_hdr.setStyleSheet("font-weight: bold; color: #6c757d; font-size: 11px; padding: 4px 6px;")
             act_fillet_hdr = QWidgetAction(menu)
             act_fillet_hdr.setDefaultWidget(lbl_fillet_hdr)
             menu.addAction(act_fillet_hdr)
 
-            act_inter = menu.addAction("Tryb interaktywny (mysz + CAD)")
+            act_inter = menu.addAction(tr("Interactive mode (mouse + CAD)", "Tryb interaktywny (mysz + CAD)"))
             act_inter.setCheckable(True)
             act_inter.setChecked(self.is_interactive_fillet())
             act_inter.toggled.connect(self.chk_interactive.setChecked)

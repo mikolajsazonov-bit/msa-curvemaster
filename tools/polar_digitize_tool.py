@@ -45,6 +45,10 @@ from ..core.polar_state import (
     POLAR_INCREMENT_PRESETS,
     format_preset_label
 )
+try:
+    from ..core.i18n import tr
+except (ImportError, ValueError):
+    from core.i18n import tr
 from ..core.geometry_utils import (
     vector_angle_deg,
     normalize_angle_deg,
@@ -150,10 +154,10 @@ class PolarDigitizeTool(BaseCurveTool):
     def create_dropdown_menu(self, parent=None) -> QMenu:
         """Tworzy rozwijane menu dla przycisku Polar Tracking na pasku narzędzi."""
         menu = QMenu(parent or self.canvas())
-        menu.setTitle("Opcje Polar Trackingu")
+        menu.setTitle(tr("Polar Tracking Settings", "Ustawienia śledzenia biegunowego"))
 
         # 1. Włącz/wyłącz
-        act_toggle = menu.addAction("Śledzenie biegunowe (Polar Tracking On)")
+        act_toggle = menu.addAction(tr("Polar Tracking On", "Śledzenie biegunowe (Włącz)"))
         act_toggle.setCheckable(True)
         act_toggle.setChecked(self.state.enabled)
         act_toggle.toggled.connect(lambda chk: setattr(self.state, 'enabled', chk))
@@ -161,7 +165,7 @@ class PolarDigitizeTool(BaseCurveTool):
         menu.addSeparator()
 
         # 2. Podmenu kroków kątowych
-        menu_inc = menu.addMenu("Krok kąta (Increment angle)")
+        menu_inc = menu.addMenu(tr("Increment angle", "Krok kąta"))
         group_inc = QActionGroup(menu_inc)
         group_inc.setExclusive(True)
 
@@ -177,17 +181,17 @@ class PolarDigitizeTool(BaseCurveTool):
             act_inc.triggered.connect(make_inc_handler(step))
 
         # 3. Baza pomiaru (Measurement)
-        menu_base = menu.addMenu("Pomiar kąta (Measurement)")
+        menu_base = menu.addMenu(tr("Angle measurement", "Pomiar kąta"))
         group_base = QActionGroup(menu_base)
         group_base.setExclusive(True)
 
-        act_rel = menu_base.addAction("Kąt względny (Relative to segment / edge)")
+        act_rel = menu_base.addAction(tr("Relative (to previous segment / starting edge)", "Kąt względny (do poprzedniego segmentu / krawędzi)"))
         act_rel.setCheckable(True)
         act_rel.setChecked(self.state.measurement_mode == PolarAngleMeasurement.RELATIVE)
         act_rel.triggered.connect(lambda: setattr(self.state, 'measurement_mode', PolarAngleMeasurement.RELATIVE))
         group_base.addAction(act_rel)
 
-        act_abs = menu_base.addAction("Kąt bezwzględny (Absolute - układ wsp.)")
+        act_abs = menu_base.addAction(tr("Absolute (to coordinate system)", "Kąt bezwzględny (do układu współrzędnych)"))
         act_abs.setCheckable(True)
         act_abs.setChecked(self.state.measurement_mode == PolarAngleMeasurement.ABSOLUTE)
         act_abs.triggered.connect(lambda: setattr(self.state, 'measurement_mode', PolarAngleMeasurement.ABSOLUTE))
@@ -196,13 +200,13 @@ class PolarDigitizeTool(BaseCurveTool):
         menu.addSeparator()
 
         # 4. Podmenu ustawień przyciągania (Snapping)
-        menu_snap = menu.addMenu("Przyciąganie (Snapping)")
+        menu_snap = menu.addMenu(tr("Snapping", "Przyciąganie (Snapping)"))
         self._build_snapping_submenu(menu_snap)
 
         menu.addSeparator()
 
         # 5. Okno ustawień zaawansowanych
-        act_dialog = menu.addAction("Ustawienia śledzenia biegunowego (CAD Settings)...")
+        act_dialog = menu.addAction(tr("Polar Tracking CAD Settings...", "Ustawienia śledzenia biegunowego (CAD)..."))
         act_dialog.triggered.connect(self._open_settings_dialog)
 
         return menu
@@ -211,7 +215,7 @@ class PolarDigitizeTool(BaseCurveTool):
         """Buduje zwięzłe podmenu konfiguracji przyciągania bezpośrednio w menu wtyczki."""
         cfg = QgsProject.instance().snappingConfig()
 
-        act_snap_toggle = menu_snap.addAction("Włącz przyciąganie (Snapping On)")
+        act_snap_toggle = menu_snap.addAction(tr("Enable Snapping", "Włącz przyciąganie"))
         act_snap_toggle.setCheckable(True)
         act_snap_toggle.setChecked(cfg.enabled())
 
@@ -225,11 +229,11 @@ class PolarDigitizeTool(BaseCurveTool):
         menu_snap.addSeparator()
 
         # Zakres warstw
-        menu_layers = menu_snap.addMenu("Zakres warstw")
+        menu_layers = menu_snap.addMenu(tr("Layer scope", "Zakres warstw"))
         grp_layers = QActionGroup(menu_layers)
         grp_layers.setExclusive(True)
 
-        act_all = menu_layers.addAction("Wszystkie warstwy (All layers)")
+        act_all = menu_layers.addAction(tr("All layers", "Wszystkie warstwy"))
         act_all.setCheckable(True)
         act_all.setChecked(cfg.mode() == QgsSnappingConfig.AllLayers)
 
@@ -241,7 +245,7 @@ class PolarDigitizeTool(BaseCurveTool):
         act_all.triggered.connect(set_all_layers)
         grp_layers.addAction(act_all)
 
-        act_act = menu_layers.addAction("Tylko aktywna warstwa (Active layer)")
+        act_act = menu_layers.addAction(tr("Active layer only", "Tylko aktywna warstwa"))
         act_act.setCheckable(True)
         act_act.setChecked(cfg.mode() == QgsSnappingConfig.ActiveLayer)
 
@@ -254,7 +258,7 @@ class PolarDigitizeTool(BaseCurveTool):
         grp_layers.addAction(act_act)
 
         # Typy obiektów przyciągania
-        menu_types = menu_snap.addMenu("Przyciągaj do")
+        menu_types = menu_snap.addMenu(tr("Snap to", "Przyciągaj do"))
 
         def update_type_flag(flag, enabled):
             c = QgsProject.instance().snappingConfig()
@@ -266,22 +270,22 @@ class PolarDigitizeTool(BaseCurveTool):
             QgsProject.instance().setSnappingConfig(c)
             self.canvas().snappingUtils().setConfig(c)
 
-        act_v = menu_types.addAction("Wierzchołków (Vertex)")
+        act_v = menu_types.addAction(tr("Vertices", "Wierzchołków"))
         act_v.setCheckable(True)
         act_v.setChecked(bool(cfg.typeFlag() & QgsSnappingConfig.VertexFlag))
         act_v.toggled.connect(lambda chk: update_type_flag(QgsSnappingConfig.VertexFlag, chk))
 
-        act_s = menu_types.addAction("Krawędzi / Odcinków (Segment)")
+        act_s = menu_types.addAction(tr("Segments / Edges", "Krawędzi / Odcinków"))
         act_s.setCheckable(True)
         act_s.setChecked(bool(cfg.typeFlag() & QgsSnappingConfig.SegmentFlag))
         act_s.toggled.connect(lambda chk: update_type_flag(QgsSnappingConfig.SegmentFlag, chk))
 
-        act_m = menu_types.addAction("Środków odcinków (Midpoint)")
+        act_m = menu_types.addAction(tr("Segment midpoints", "Środków odcinków"))
         act_m.setCheckable(True)
         act_m.setChecked(bool(cfg.typeFlag() & QgsSnappingConfig.MiddleOfSegmentFlag))
         act_m.toggled.connect(lambda chk: update_type_flag(QgsSnappingConfig.MiddleOfSegmentFlag, chk))
 
-        act_i = menu_types.addAction("Przecięć (Intersections)")
+        act_i = menu_types.addAction(tr("Intersections", "Przecięć"))
         act_i.setCheckable(True)
         act_i.setChecked(cfg.intersectionSnapping())
 

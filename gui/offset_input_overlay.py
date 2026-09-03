@@ -14,6 +14,10 @@ from qgis.PyQt.QtWidgets import (
     QFrame
 )
 from qgis.PyQt.QtGui import QDoubleValidator
+try:
+    from ..core.i18n import tr
+except (ImportError, ValueError):
+    from core.i18n import tr
 
 
 class OffsetInputOverlay(QFrame):

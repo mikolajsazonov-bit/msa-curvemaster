@@ -42,6 +42,10 @@ from ..core.offset_utils import (
     extract_rings_as_line
 )
 from ..core.layer_modifier import LayerModifier
+try:
+    from ..core.i18n import tr
+except (ImportError, ValueError):
+    from core.i18n import tr
 
 
 class OffsetCandidateScope(Enum):
@@ -131,9 +135,9 @@ class OffsetTool(BaseCurveTool):
         umożliwiające wybór zakresu wykrywanych obiektów.
         """
         menu = QMenu(parent or self.canvas())
-        menu.setTitle("Zakres wykrywania obiektów")
+        menu.setTitle(tr("Candidate Scope for Offset", "Zakres wykrywania obiektów"))
 
-        lbl_header = QLabel("  Wykrywaj obiekty do offsetu:")
+        lbl_header = QLabel(tr("  Detect objects for offset:", "  Wykrywaj obiekty do offsetu:"))
         lbl_header.setStyleSheet("font-weight: bold; color: #6c757d; font-size: 11px; padding: 4px 6px;")
         act_header = QWidgetAction(menu)
         act_header.setDefaultWidget(lbl_header)
@@ -143,9 +147,21 @@ class OffsetTool(BaseCurveTool):
         group.setExclusive(True)
 
         options = [
-            ("Wszystkie obiekty (linie i poligony)", OffsetCandidateScope.ALL, "Wykrywaj linie, polilinie oraz granice poligonów ze wszystkich widocznych warstw"),
-            ("Tylko obiekty liniowe", OffsetCandidateScope.LINES_ONLY, "Ogranicz wykrywanie tylko do linii i polilinii ze wszystkich warstw"),
-            ("Tylko z aktualnej warstwy", OffsetCandidateScope.ACTIVE_LAYER, "Wykrywaj obiekty wyłącznie z warstwy, która jest aktualnie edytowana"),
+            (
+                tr("All objects (lines and polygons)", "Wszystkie obiekty (linie i poligony)"),
+                OffsetCandidateScope.ALL,
+                tr("Detect lines, polylines, and polygon boundaries from all visible layers", "Wykrywaj linie, polilinie oraz granice poligonów ze wszystkich widocznych warstw")
+            ),
+            (
+                tr("Line features only", "Tylko obiekty liniowe"),
+                OffsetCandidateScope.LINES_ONLY,
+                tr("Restrict detection to lines and polylines across all layers", "Ogranicz wykrywanie tylko do linii i polilinii ze wszystkich warstw")
+            ),
+            (
+                tr("Active editable layer only", "Tylko z aktualnej warstwy"),
+                OffsetCandidateScope.ACTIVE_LAYER,
+                tr("Detect objects only from the currently edited layer", "Wykrywaj obiekty wyłącznie z warstwy, która jest aktualnie edytowana")
+            ),
         ]
 
         action_scope_map = []
@@ -171,12 +187,12 @@ class OffsetTool(BaseCurveTool):
     def _set_candidate_scope(self, scope: OffsetCandidateScope):
         OffsetTool.candidate_scope = scope
         scope_names = {
-            OffsetCandidateScope.ALL: "Wszystkie obiekty (linie i poligony)",
-            OffsetCandidateScope.LINES_ONLY: "Tylko obiekty liniowe",
-            OffsetCandidateScope.ACTIVE_LAYER: "Tylko aktualna edytowana warstwa"
+            OffsetCandidateScope.ALL: tr("All objects (lines and polygons)", "Wszystkie obiekty (linie i poligony)"),
+            OffsetCandidateScope.LINES_ONLY: tr("Line features only", "Tylko obiekty liniowe"),
+            OffsetCandidateScope.ACTIVE_LAYER: tr("Active editable layer only", "Tylko aktualna edytowana warstwa")
         }
         name = scope_names.get(scope, "")
-        self._set_status_tip(f"MSA Offset: Ustawiono zakres wykrywania: {name}")
+        self._set_status_tip(tr(f"MSA Offset: Candidate scope set to: {name}", f"MSA Offset: Ustawiono zakres wykrywania: {name}"))
 
     def canvasMoveEvent(self, e: QgsMapMouseEvent):
         active_layer = self.active_editable_layer()

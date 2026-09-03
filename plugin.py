@@ -51,8 +51,9 @@ class MSACurveMasterPlugin:
         self.btn_offset: QToolButton = None
         self.btn_polar: QToolButton = None
 
-    def tr(self, message: str) -> str:
-        return QCoreApplication.translate('MSACurveMasterPlugin', message)
+    def tr(self, message_en: str, message_pl: str = None) -> str:
+        from .core.i18n import tr as i18n_tr
+        return i18n_tr(message_en, message_pl, 'MSACurveMasterPlugin')
 
     def _load_icon(self, relative_path: str) -> QIcon:
         """Ładuje ikonę SVG lub PNG jeśli istnieje."""
@@ -67,7 +68,7 @@ class MSACurveMasterPlugin:
 
     def initGui(self):
         # 1. Pasek narzędzi
-        self.toolbar = self.iface.addToolBar(self.tr('MSA: CurveMaster'))
+        self.toolbar = self.iface.addToolBar(self.tr('MSA: CurveMaster', 'MSA: CurveMaster'))
         self.toolbar.setObjectName('MSACurveMasterToolbar')
 
         # 2. Inicjalizacja widgetu ustawień (domyślnie zwinięty/ukryty)
@@ -85,27 +86,55 @@ class MSACurveMasterPlugin:
 
         # 5. Akcje narzędzi
         icon_bend = self._load_icon('icons/bend_segment.svg')
-        self.action_bend = QAction(icon_bend, self.tr('Wygnij odcinek w łuk (Bend Segment)'), self.iface.mainWindow())
+        self.action_bend = QAction(
+            icon_bend,
+            self.tr('Bend Segment to Arc', 'Wygnij odcinek w łuk'),
+            self.iface.mainWindow()
+        )
         self.action_bend.setCheckable(True)
-        self.action_bend.setStatusTip(self.tr('MSA: Przeciągnij prosty odcinek polilinii/poligonu w zinterpolowany łuk'))
+        self.action_bend.setStatusTip(self.tr(
+            'MSA: Drag a straight polyline or polygon segment into an arc',
+            'MSA: Przeciągnij prosty odcinek polilinii/poligonu w zinterpolowany łuk'
+        ))
         self.action_bend.triggered.connect(self._toggle_bend_tool)
 
         icon_fillet = self._load_icon('icons/corner_fillet.svg')
-        self.action_fillet = QAction(icon_fillet, self.tr('Zaokrąglij wierzchołek (Corner Fillet)'), self.iface.mainWindow())
+        self.action_fillet = QAction(
+            icon_fillet,
+            self.tr('Corner Fillet', 'Zaokrąglij wierzchołek'),
+            self.iface.mainWindow()
+        )
         self.action_fillet.setCheckable(True)
-        self.action_fillet.setStatusTip(self.tr('MSA: Zaokrąglij wierzchołek narożnika łukiem stycznym (CAD overlay)'))
+        self.action_fillet.setStatusTip(self.tr(
+            'MSA: Round a sharp corner vertex with a tangent arc (CAD overlay)',
+            'MSA: Zaokrąglij wierzchołek narożnika łukiem stycznym (CAD overlay)'
+        ))
         self.action_fillet.triggered.connect(self._toggle_fillet_tool)
 
         icon_offset = self._load_icon('icons/offset.svg')
-        self.action_offset = QAction(icon_offset, self.tr('Prosty offset (Offset)'), self.iface.mainWindow())
+        self.action_offset = QAction(
+            icon_offset,
+            self.tr('Offset Tool', 'Prosty offset'),
+            self.iface.mainWindow()
+        )
         self.action_offset.setCheckable(True)
-        self.action_offset.setStatusTip(self.tr('MSA: Prosty offset linii, polilinii i granic poligonów (przeciągnij myszą lub wpisz odległość)'))
+        self.action_offset.setStatusTip(self.tr(
+            'MSA: Parallel offset for lines and polygons (drag or type distance)',
+            'MSA: Prosty offset linii, polilinii i granic poligonów (przeciągnij myszą lub wpisz odległość)'
+        ))
         self.action_offset.triggered.connect(self._toggle_offset_tool)
 
         icon_polar = self._load_icon('icons/polar_tracking.svg')
-        self.action_polar = QAction(icon_polar, self.tr('Rysuj z Polar Trackingiem (Polar Digitize)'), self.iface.mainWindow())
+        self.action_polar = QAction(
+            icon_polar,
+            self.tr('Polar Digitize', 'Rysuj z Polar Trackingiem'),
+            self.iface.mainWindow()
+        )
         self.action_polar.setCheckable(True)
-        self.action_polar.setStatusTip(self.tr('MSA: Rysuj linie i poligony z przyciąganiem do kątów względnych i bezwzględnych (CAD Polar Tracking)'))
+        self.action_polar.setStatusTip(self.tr(
+            'MSA: Draw lines and polygons with angle snapping (CAD Polar Tracking)',
+            'MSA: Rysuj linie i poligony z przyciąganiem do kątów względnych i bezwzględnych (CAD Polar Tracking)'
+        ))
         self.action_polar.triggered.connect(self._toggle_polar_tool)
 
         # Grupa akcji
