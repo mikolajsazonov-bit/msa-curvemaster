@@ -11,6 +11,10 @@ from qgis.core import (
     QgsFeature,
     QgsGeometry,
     QgsPointXY,
+    QgsLineString,
+    QgsMultiLineString,
+    QgsPolygon,
+    QgsMultiPolygon,
     QgsWkbTypes
 )
 from .geometry_utils import (
@@ -67,11 +71,13 @@ class LayerModifier:
         if new_geom is None or new_geom.isEmpty():
             return False
 
-        if QgsWkbTypes.isMultiType(layer.wkbType()) and not new_geom.isMultipart():
-            new_geom.convertToMultiType()
+        adapted = LayerModifier.adapt_geometry_to_layer(layer, new_geom)
+        if not adapted:
+            return False
+        final_geom = adapted[0]
 
         layer.beginEditCommand(command_name)
-        success = layer.changeGeometry(feature_id, new_geom)
+        success = layer.changeGeometry(feature_id, final_geom)
         if success:
             layer.endEditCommand()
             layer.triggerRepaint()
@@ -134,11 +140,13 @@ class LayerModifier:
         if new_geom is None or new_geom.isEmpty():
             return False
 
-        if QgsWkbTypes.isMultiType(layer.wkbType()) and not new_geom.isMultipart():
-            new_geom.convertToMultiType()
+        adapted = LayerModifier.adapt_geometry_to_layer(layer, new_geom)
+        if not adapted:
+            return False
+        final_geom = adapted[0]
 
         layer.beginEditCommand(command_name)
-        success = layer.changeGeometry(feature_id, new_geom)
+        success = layer.changeGeometry(feature_id, final_geom)
         if success:
             layer.endEditCommand()
             layer.triggerRepaint()
@@ -248,58 +256,208 @@ class LayerModifier:
         return None
 
     @staticmethod
+    def adapt_geometry_to_layer(layer: QgsVectorLayer, geom: QgsGeometry) -> List[QgsGeometry]:
+        """
+        Dopasowuje geometrię wejściową do dokładnego typu WKB i wymiarowości docelowej warstwy.
+        Obsługuje:
+        - Dopasowanie kategorii bazowej (Polygon -> Line, Line -> Polygon, GeometryCollection -> części)
+        - Linearyzację łuków (gdy warstwa nie wspiera krzywych)
+        - Wymiary Z i M (usuwanie Z/M gdy warstwa 2D, dodawanie Z/M=0 gdy warstwa 3D/M)
+        - Wieloczęściowość (Multi vs Single):
+          * dla warstw SinglePart dzieli MultiPart na pojedyncze geometrie
+          * dla warstw MultiPart scala lub konwertuje do typu Multi
+        Zwraca listę geometrii w 100% zgodnych z definicją warstwy, gwarantując
+        poprawny zapis zmian bez błędów "typ geometrii nie jest zgodny z bieżącą warstwą".
+        """
+        if geom is None or geom.isEmpty() or not layer:
+            return []
+
+        layer_geom_type = layer.geometryType()
+        layer_wkb = layer.wkbType()
+        layer_is_multi = QgsWkbTypes.isMultiType(layer_wkb)
+        layer_has_z = QgsWkbTypes.hasZ(layer_wkb)
+        layer_has_m = QgsWkbTypes.hasM(layer_wkb)
+        layer_is_curved = QgsWkbTypes.isCurvedType(layer_wkb)
+
+        geoms: List[QgsGeometry] = []
+
+        # 1. Konwersja kategorii bazowej
+        if layer_geom_type == QgsWkbTypes.LineGeometry:
+            if geom.type() == QgsWkbTypes.PolygonGeometry:
+                # Wyciągnięcie wszystkich pierścieni jako linii z zachowaniem współrzędnych Z/M
+                for part in geom.parts():
+                    if hasattr(part, 'exteriorRing') and part.exteriorRing():
+                        geoms.append(QgsGeometry(part.exteriorRing().clone()))
+                    if hasattr(part, 'numInteriorRings'):
+                        for i in range(part.numInteriorRings()):
+                            geoms.append(QgsGeometry(part.interiorRing(i).clone()))
+                if not geoms:
+                    if geom.isMultipart():
+                        for poly in geom.asMultiPolygon():
+                            for ring in poly:
+                                geoms.append(QgsGeometry.fromPolylineXY(ring))
+                    else:
+                        for ring in geom.asPolygon():
+                            geoms.append(QgsGeometry.fromPolylineXY(ring))
+            elif geom.type() == QgsWkbTypes.LineGeometry:
+                geoms.append(QgsGeometry(geom))
+            elif geom.wkbType() in (
+                QgsWkbTypes.GeometryCollection,
+                QgsWkbTypes.GeometryCollectionZ,
+                QgsWkbTypes.GeometryCollectionM,
+                QgsWkbTypes.GeometryCollectionZM
+            ):
+                for part in geom.parts():
+                    if part.geometryType() == QgsWkbTypes.LineGeometry:
+                        geoms.append(QgsGeometry(part.clone()))
+                    elif part.geometryType() == QgsWkbTypes.PolygonGeometry:
+                        if hasattr(part, 'exteriorRing') and part.exteriorRing():
+                            geoms.append(QgsGeometry(part.exteriorRing().clone()))
+                        if hasattr(part, 'numInteriorRings'):
+                            for i in range(part.numInteriorRings()):
+                                geoms.append(QgsGeometry(part.interiorRing(i).clone()))
+
+        elif layer_geom_type == QgsWkbTypes.PolygonGeometry:
+            if geom.type() == QgsWkbTypes.LineGeometry:
+                # Zamknięcie polilinii i konwersja na poligon
+                if geom.isMultipart():
+                    for polyline in geom.asMultiPolyline():
+                        if len(polyline) >= 3:
+                            ring = list(polyline)
+                            if ring[0] != ring[-1]:
+                                ring.append(ring[0])
+                            geoms.append(QgsGeometry.fromPolygonXY([ring]))
+                else:
+                    polyline = geom.asPolyline()
+                    if len(polyline) >= 3:
+                        ring = list(polyline)
+                        if ring[0] != ring[-1]:
+                            ring.append(ring[0])
+                        geoms.append(QgsGeometry.fromPolygonXY([ring]))
+            elif geom.type() == QgsWkbTypes.PolygonGeometry:
+                geoms.append(QgsGeometry(geom))
+
+        else:
+            geoms.append(QgsGeometry(geom))
+
+        if not geoms:
+            return []
+
+        processed: List[QgsGeometry] = []
+        for g in geoms:
+            if g is None or g.isEmpty():
+                continue
+
+            # 2. Linearyzacja krzywych jeśli warstwa nie obsługuje krzywych
+            if not layer_is_curved and QgsWkbTypes.isCurvedType(g.wkbType()):
+                g = QgsGeometry(g.constGet().segmentize())
+
+            # 3. Dopasowanie wymiaru Z
+            geom_has_z = QgsWkbTypes.hasZ(g.wkbType())
+            if not layer_has_z and geom_has_z:
+                g.get().dropZValue()
+            elif layer_has_z and not geom_has_z:
+                g.get().addZValue(0.0)
+
+            # 4. Dopasowanie wymiaru M
+            geom_has_m = QgsWkbTypes.hasM(g.wkbType())
+            if not layer_has_m and geom_has_m:
+                g.get().dropMValue()
+            elif layer_has_m and not geom_has_m:
+                g.get().addMValue(0.0)
+
+            processed.append(g)
+
+        if not processed:
+            return []
+
+        # 5. Dopasowanie typu Multi vs Single
+        result: List[QgsGeometry] = []
+        if layer_is_multi:
+            if len(processed) == 1:
+                g = processed[0]
+                if not g.isMultipart():
+                    g.convertToMultiType()
+                result.append(g)
+            else:
+                # Połączenie wielu części w jedną geometrię MultiPart
+                if layer_geom_type == QgsWkbTypes.LineGeometry:
+                    mls = QgsMultiLineString()
+                    for g in processed:
+                        for part in g.parts():
+                            mls.addGeometry(part.clone())
+                    res = QgsGeometry(mls)
+                elif layer_geom_type == QgsWkbTypes.PolygonGeometry:
+                    mp = QgsMultiPolygon()
+                    for g in processed:
+                        for part in g.parts():
+                            mp.addGeometry(part.clone())
+                    res = QgsGeometry(mp)
+                else:
+                    res = processed[0]
+                    res.convertToMultiType()
+
+                if not layer_has_z and QgsWkbTypes.hasZ(res.wkbType()):
+                    res.get().dropZValue()
+                elif layer_has_z and not QgsWkbTypes.hasZ(res.wkbType()):
+                    res.get().addZValue(0.0)
+                if not layer_has_m and QgsWkbTypes.hasM(res.wkbType()):
+                    res.get().dropMValue()
+                elif layer_has_m and not QgsWkbTypes.hasM(res.wkbType()):
+                    res.get().addMValue(0.0)
+                result.append(res)
+        else:
+            # Warstwa jednoczęściowa (SinglePart): rozbicie MultiPart na pojedyncze geometrie
+            for g in processed:
+                if g.isMultipart():
+                    for part in g.parts():
+                        single_g = QgsGeometry(part.clone())
+                        if not layer_has_z and QgsWkbTypes.hasZ(single_g.wkbType()):
+                            single_g.get().dropZValue()
+                        elif layer_has_z and not QgsWkbTypes.hasZ(single_g.wkbType()):
+                            single_g.get().addZValue(0.0)
+                        if not layer_has_m and QgsWkbTypes.hasM(single_g.wkbType()):
+                            single_g.get().dropMValue()
+                        elif layer_has_m and not QgsWkbTypes.hasM(single_g.wkbType()):
+                            single_g.get().addMValue(0.0)
+                        result.append(single_g)
+                else:
+                    result.append(g)
+
+        return result
+
+    @staticmethod
     def add_feature(
         layer: QgsVectorLayer,
         geom: QgsGeometry,
         command_name: str = "MSA: Utwórz offset"
     ) -> Optional[int]:
         """
-        Tworzy nowy obiekt z podaną geometrią w edytowalnej warstwie QGIS,
-        uwzględniając transakcje i historię operacji (Undo/Redo).
+        Tworzy nowy obiekt (lub obiekty w przypadku rozbicia multipart na singlepart)
+        z podaną geometrią w edytowalnej warstwie QGIS, gwarantując pełną zgodność
+        typu WKB oraz wymiarowości Z/M z definicją warstwy, z obsługą Undo/Redo.
         """
         if not layer or not layer.isEditable():
             return None
         if geom is None or geom.isEmpty():
             return None
 
-        layer_geom_type = layer.geometryType()
-        new_geom = QgsGeometry(geom)
-
-        # Dopasowanie poligon -> linia (np. gdy odsuwamy granicę poligonu do warstwy liniowej)
-        if layer_geom_type == QgsWkbTypes.LineGeometry and new_geom.type() == QgsWkbTypes.PolygonGeometry:
-            if new_geom.isMultipart():
-                lines = []
-                for poly in new_geom.asMultiPolygon():
-                    for ring in poly:
-                        lines.append(ring)
-                new_geom = QgsGeometry.fromMultiPolylineXY(lines)
-            else:
-                rings = new_geom.asPolygon()
-                if rings:
-                    new_geom = QgsGeometry.fromPolylineXY(rings[0])
-
-        # Dopasowanie linia zamknięta -> poligon
-        elif layer_geom_type == QgsWkbTypes.PolygonGeometry and new_geom.type() == QgsWkbTypes.LineGeometry:
-            if not new_geom.isMultipart():
-                polyline = new_geom.asPolyline()
-                if polyline and len(polyline) >= 3:
-                    if polyline[0] != polyline[-1]:
-                        polyline.append(polyline[0])
-                    new_geom = QgsGeometry.fromPolygonXY([polyline])
-
-        # Dopasowanie typu Multi vs Single
-        if QgsWkbTypes.isMultiType(layer.wkbType()) and not new_geom.isMultipart():
-            new_geom.convertToMultiType()
-
-        feat = QgsFeature(layer.fields())
-        feat.setGeometry(new_geom)
+        adapted_geoms = LayerModifier.adapt_geometry_to_layer(layer, geom)
+        if not adapted_geoms:
+            return None
 
         layer.beginEditCommand(command_name)
-        success = layer.addFeature(feat)
-        if success:
+        added_ids = []
+        for g in adapted_geoms:
+            feat = QgsFeature(layer.fields())
+            feat.setGeometry(g)
+            if layer.addFeature(feat):
+                added_ids.append(feat.id())
+
+        if added_ids:
             layer.endEditCommand()
             layer.triggerRepaint()
-            return feat.id()
+            return added_ids[0]
         else:
             layer.destroyEditCommand()
             return None

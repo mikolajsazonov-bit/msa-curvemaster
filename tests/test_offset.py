@@ -184,6 +184,65 @@ class TestOffsetUtils(unittest.TestCase):
         # Przywrócenie domyślnego zakresu
         OffsetTool.candidate_scope = OffsetCandidateScope.ALL
 
+    def test_layer_modifier_adapt_geometry_single_line_from_multi(self):
+        layer = QgsVectorLayer('LineString?crs=epsg:2180', 'test_single_line', 'memory')
+        layer.startEditing()
+        # MultiLineString z 1 częścią
+        mls1 = QgsGeometry.fromMultiPolylineXY([[QgsPointXY(0.0, 0.0), QgsPointXY(10.0, 10.0)]])
+        feat_id = LayerModifier.add_feature(layer, mls1, "MSA: Multi to Single")
+        self.assertIsNotNone(feat_id)
+        self.assertTrue(layer.commitChanges(), f"Commit failed: {layer.commitErrors()}")
+        self.assertEqual(layer.featureCount(), 1)
+        saved_geom = next(layer.getFeatures()).geometry()
+        self.assertFalse(saved_geom.isMultipart())
+        self.assertEqual(saved_geom.type(), QgsWkbTypes.LineGeometry)
+
+    def test_layer_modifier_adapt_geometry_multi_split_into_single(self):
+        layer = QgsVectorLayer('LineString?crs=epsg:2180', 'test_split_lines', 'memory')
+        layer.startEditing()
+        # MultiLineString z 2 rozłącznymi częściami
+        mls2 = QgsGeometry.fromMultiPolylineXY([
+            [QgsPointXY(0.0, 0.0), QgsPointXY(10.0, 10.0)],
+            [QgsPointXY(20.0, 20.0), QgsPointXY(30.0, 30.0)]
+        ])
+        feat_id = LayerModifier.add_feature(layer, mls2, "MSA: Multi parts to Single")
+        self.assertIsNotNone(feat_id)
+        self.assertTrue(layer.commitChanges(), f"Commit failed: {layer.commitErrors()}")
+        self.assertEqual(layer.featureCount(), 2)
+        for f in layer.getFeatures():
+            self.assertFalse(f.geometry().isMultipart())
+            self.assertEqual(f.geometry().type(), QgsWkbTypes.LineGeometry)
+
+    def test_layer_modifier_adapt_geometry_drop_z_for_2d_layer(self):
+        layer = QgsVectorLayer('LineString?crs=epsg:2180', 'test_drop_z', 'memory')
+        layer.startEditing()
+        # 3D LineString dodawany do warstwy 2D
+        line_z = QgsGeometry.fromPolylineXY([QgsPointXY(0.0, 0.0), QgsPointXY(10.0, 10.0)])
+        line_z.get().addZValue(123.45)
+        self.assertTrue(QgsWkbTypes.hasZ(line_z.wkbType()))
+
+        feat_id = LayerModifier.add_feature(layer, line_z, "MSA: Drop Z")
+        self.assertIsNotNone(feat_id)
+        self.assertTrue(layer.commitChanges(), f"Commit failed: {layer.commitErrors()}")
+        saved_geom = next(layer.getFeatures()).geometry()
+        self.assertFalse(QgsWkbTypes.hasZ(saved_geom.wkbType()))
+
+    def test_layer_modifier_adapt_geometry_polygon_to_line(self):
+        layer = QgsVectorLayer('LineString?crs=epsg:2180', 'test_poly_to_line', 'memory')
+        layer.startEditing()
+        poly = QgsGeometry.fromPolygonXY([[
+            QgsPointXY(0.0, 0.0),
+            QgsPointXY(10.0, 0.0),
+            QgsPointXY(10.0, 10.0),
+            QgsPointXY(0.0, 0.0)
+        ]])
+        feat_id = LayerModifier.add_feature(layer, poly, "MSA: Poly to Line")
+        self.assertIsNotNone(feat_id)
+        self.assertTrue(layer.commitChanges(), f"Commit failed: {layer.commitErrors()}")
+        self.assertEqual(layer.featureCount(), 1)
+        saved_geom = next(layer.getFeatures()).geometry()
+        self.assertEqual(saved_geom.type(), QgsWkbTypes.LineGeometry)
+
 
 if __name__ == '__main__':
     unittest.main()
