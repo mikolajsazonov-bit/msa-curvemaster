@@ -427,10 +427,28 @@ class LayerModifier:
         return result
 
     @staticmethod
+    def copy_attributes_for_new_feature(layer: QgsVectorLayer, source_feat: QgsFeature) -> list:
+        """
+        Kopiuje atrybuty z obiektu źródłowego dla nowego obiektu,
+        zerując (ustawiając na None/NULL) pola klucza głównego (np. fid, ogc_fid),
+        aby dostawca danych (np. OGR/GeoPackage) automatycznie nadał nowy unikalny identyfikator.
+        """
+        if not source_feat or not source_feat.isValid() or not layer:
+            return []
+        attrs = list(source_feat.attributes())
+        pk_indices = set(layer.primaryKeyAttributes()) if hasattr(layer, 'primaryKeyAttributes') else set()
+        for idx, field in enumerate(layer.fields()):
+            fname = field.name().lower()
+            if idx in pk_indices or fname in ('fid', 'ogc_fid', 'rowid'):
+                attrs[idx] = None
+        return attrs
+
+    @staticmethod
     def add_feature(
         layer: QgsVectorLayer,
         geom: QgsGeometry,
-        command_name: str = "MSA: Utwórz offset"
+        command_name: str = "MSA: Utwórz offset",
+        source_feature: Optional[QgsFeature] = None
     ) -> Optional[int]:
         """
         Tworzy nowy obiekt (lub obiekty w przypadku rozbicia multipart na singlepart)
@@ -450,6 +468,8 @@ class LayerModifier:
         added_ids = []
         for g in adapted_geoms:
             feat = QgsFeature(layer.fields())
+            if source_feature and source_feature.isValid():
+                feat.setAttributes(LayerModifier.copy_attributes_for_new_feature(layer, source_feature))
             feat.setGeometry(g)
             if layer.addFeature(feat):
                 added_ids.append(feat.id())

@@ -5,6 +5,7 @@ MSA: CurveMaster - Pływający widget wprowadzania promienia (CAD-style).
 Autor: Mikołaj Sazonov
 """
 
+from typing import Optional
 from qgis.PyQt.QtCore import Qt, pyqtSignal, QPoint
 from qgis.PyQt.QtWidgets import (
     QWidget,
@@ -64,29 +65,46 @@ class RadiusInputOverlay(QFrame):
         self.label = QLabel("Promień:")
         layout.addWidget(self.label)
 
+        self.last_radius = None
         self.edit = QLineEdit()
         self.edit.setPlaceholderText("np. 15.0")
         validator = QDoubleValidator(0.05, 10000.0, 2, self)
         validator.setNotation(QDoubleValidator.StandardNotation)
         self.edit.setValidator(validator)
         self.edit.returnPressed.connect(self._on_submit)
+        self.edit.installEventFilter(self)
         layout.addWidget(self.edit)
 
         self.lbl_unit = QLabel("m")
         layout.addWidget(self.lbl_unit)
 
-        self.lbl_hint = QLabel("(Enter = zatwierdź)")
+        self.lbl_hint = QLabel("(Enter/Tab = zatwierdź)")
         self.lbl_hint.setStyleSheet("color: #adb5bd; font-size: 10px; font-weight: normal;")
         layout.addWidget(self.lbl_hint)
 
         self.adjustSize()
         self.hide()
 
+    def set_last_radius(self, r: Optional[float]):
+        """Ustawia zapamiętany promień i odświeża wskazówkę CAD."""
+        self.last_radius = r
+        if r is not None and r > 0:
+            self.lbl_hint.setText(f"(Enter/Tab = <{r:.2f}> m)")
+            if not self.edit.hasFocus() and not self.edit.text().strip():
+                self.edit.setPlaceholderText(f"<{r:.2f}>")
+        else:
+            self.lbl_hint.setText("(Enter/Tab = zatwierdź)")
+            if not self.edit.hasFocus() and not self.edit.text().strip():
+                self.edit.setPlaceholderText("np. 15.0")
+
     def set_current_radius(self, radius: float):
         """Aktualizuje podgląd promienia jeśli użytkownik sam aktualnie nie pisze tekstu."""
         if not self.edit.hasFocus() and not self.edit.text().strip():
             clamped = min(max(0.05, radius), 10000.0)
-            self.edit.setPlaceholderText(f"{clamped:.2f}")
+            if self.last_radius is not None and self.last_radius > 0:
+                self.edit.setPlaceholderText(f"<{self.last_radius:.2f}> ({clamped:.2f} m)")
+            else:
+                self.edit.setPlaceholderText(f"{clamped:.2f}")
 
     def update_position(self, screen_pos: QPoint, canvas_rect):
         """Ustawia pozycję widgetu obok kursora, dbając by nie wyszedł poza płótno mapy."""
@@ -113,13 +131,26 @@ class RadiusInputOverlay(QFrame):
 
     def _on_submit(self):
         text = self.edit.text().replace(',', '.').strip()
-        try:
-            val = float(text)
-            if val > 0:
-                clamped_val = min(val, 10000.0)
-                self.radiusSubmitted.emit(clamped_val)
-        except ValueError:
-            pass
+        if text:
+            try:
+                val = float(text)
+                if val > 0:
+                    clamped_val = min(val, 10000.0)
+                    self.radiusSubmitted.emit(clamped_val)
+                    return
+            except ValueError:
+                pass
+
+        if self.last_radius is not None and self.last_radius > 0:
+            self.radiusSubmitted.emit(self.last_radius)
+
+    def eventFilter(self, obj, event):
+        from qgis.PyQt.QtCore import QEvent
+        if obj == self.edit and event.type() == QEvent.KeyPress:
+            if event.key() in (Qt.Key_Tab, Qt.Key_Backtab):
+                self._on_submit()
+                return True
+        return super().eventFilter(obj, event)
 
     def keyPressEvent(self, e):
         if e.key() == Qt.Key_Escape:

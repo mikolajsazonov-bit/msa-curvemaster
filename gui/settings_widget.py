@@ -166,7 +166,7 @@ class CurveSettingsWidget(QWidget):
             self.fillet_container.setVisible(False)
             self.polar_container.setVisible(False)
             self.setVisible(True)
-        elif mode == 'fillet':
+        elif mode in ('fillet', 'fillet_lines'):
             self.sampling_container.setVisible(True)
             self.fillet_container.setVisible(True)
             self.polar_container.setVisible(False)

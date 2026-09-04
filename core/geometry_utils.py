@@ -847,3 +847,543 @@ def project_point_on_ray_t(
     perp_dist = math.hypot(xv - proj_x, yv - proj_y)
     return t, perp_dist, (proj_x, proj_y)
 
+
+def segment_intersection_2d(
+    p1: Point2D,
+    p2: Point2D,
+    p3: Point2D,
+    p4: Point2D
+) -> Optional[Tuple[float, float, Point2D]]:
+    """
+    Oblicza punkt przecięcia dwóch odcinków [p1, p2] i [p3, p4].
+    Zwraca (t, u, punkt_przecięcia) gdzie t in [0, 1] wzdłuż p1->p2, u in [0, 1] wzdłuż p3->p4,
+    lub None jeśli odcinki się nie przecinają.
+    """
+    x1, y1 = p1
+    x2, y2 = p2
+    x3, y3 = p3
+    x4, y4 = p4
+
+    dx1 = x2 - x1
+    dy1 = y2 - y1
+    dx2 = x4 - x3
+    dy2 = y4 - y3
+
+    denom = dx1 * dy2 - dy1 * dx2
+    if abs(denom) < 1e-11:
+        return None
+
+    delta_x = x3 - x1
+    delta_y = y3 - y1
+
+    t = (delta_x * dy2 - delta_y * dx2) / denom
+    u = (delta_x * dy1 - delta_y * dx1) / denom
+
+    tol = 1e-7
+    if -tol <= t <= 1.0 + tol and -tol <= u <= 1.0 + tol:
+        t_clamped = max(0.0, min(1.0, t))
+        ix = x1 + t_clamped * dx1
+        iy = y1 + t_clamped * dy1
+        return t_clamped, max(0.0, min(1.0, u)), (ix, iy)
+
+    return None
+
+
+def ray_polyline_intersection(
+    origin: Point2D,
+    ray_dir: Point2D,
+    polyline: List[Point2D],
+    min_t: float = 1e-4
+) -> Optional[Tuple[float, Point2D]]:
+    """
+    Oblicza najbliższy punkt przecięcia promienia (origin, ray_dir) z dowolnym odcinkiem polilinii.
+    Zwraca (odległość_t, punkt_przecięcia) lub None.
+    """
+    n = len(polyline)
+    if n < 2:
+        return None
+
+    len_dir = math.hypot(ray_dir[0], ray_dir[1])
+    if len_dir < 1e-9:
+        return None
+
+    dx = ray_dir[0] / len_dir
+    dy = ray_dir[1] / len_dir
+    x0, y0 = origin
+
+    best_t = float('inf')
+    best_pt = None
+
+    for i in range(n - 1):
+        x1, y1 = polyline[i]
+        x2, y2 = polyline[i + 1]
+
+        vx = x2 - x1
+        vy = y2 - y1
+
+        D = vx * dy - vy * dx
+        if abs(D) < 1e-11:
+            continue
+
+        delta_x = x1 - x0
+        delta_y = y1 - y0
+
+        t = (vx * delta_y - vy * delta_x) / D
+        u = (dx * delta_y - dy * delta_x) / D
+
+        if t > min_t and -1e-7 <= u <= 1.0 + 1e-7:
+            if t < best_t:
+                best_t = t
+                best_pt = (x0 + t * dx, y0 + t * dy)
+
+    if best_pt is not None:
+        return best_t, best_pt
+    return None
+
+
+def trim_polyline_with_boundaries(
+    polyline: List[Point2D],
+    boundary_lines: List[List[Point2D]],
+    click_pt: Point2D
+) -> Optional[Tuple[List[Point2D], List[List[Point2D]]]]:
+    """
+    Dzieli polilinię 'polyline' wszystkimi punktami przecięcia z krawędziami tnącymi 'boundary_lines'.
+    Wyszukuje fragment polilinii znajdujący się najbliżej 'click_pt' (kliknięty fragment do usunięcia).
+    Zwraca: (usunięty_fragment, lista_pozostałych_fragmentów) lub None jeśli brak przecięć.
+    """
+    n = len(polyline)
+    if n < 2 or not boundary_lines:
+        return None
+
+    # 1. Obliczenie odległości skumulowanej wzdłuż polilinii dla każdego wierzchołka
+    cum_dist = [0.0]
+    for i in range(n - 1):
+        d = distance(polyline[i], polyline[i + 1])
+        cum_dist.append(cum_dist[-1] + d)
+    total_len = cum_dist[-1]
+    if total_len < 1e-6:
+        return None
+
+    # 2. Wyszukanie wszystkich unikalnych przecięć z krawędziami tnącymi
+    intersections: List[Tuple[float, Point2D]] = []
+
+    for seg_idx in range(n - 1):
+        p1 = polyline[seg_idx]
+        p2 = polyline[seg_idx + 1]
+        seg_len = cum_dist[seg_idx + 1] - cum_dist[seg_idx]
+        if seg_len < 1e-9:
+            continue
+
+        for b_line in boundary_lines:
+            nb = len(b_line)
+            if nb < 2:
+                continue
+            for b_idx in range(nb - 1):
+                b1 = b_line[b_idx]
+                b2 = b_line[b_idx + 1]
+                res = segment_intersection_2d(p1, p2, b1, b2)
+                if res is not None:
+                    t, u, ipt = res
+                    dist_along = cum_dist[seg_idx] + t * seg_len
+                    # Ignorujemy przecięcia zbyt blisko już zarejestrowanych
+                    is_dup = False
+                    for existing_s, _ in intersections:
+                        if abs(existing_s - dist_along) < 1e-4:
+                            is_dup = True
+                            break
+                    if not is_dup:
+                        intersections.append((dist_along, ipt))
+
+    if not intersections:
+        return None
+
+    # 3. Sortowanie przecięć wzdłuż linii
+    intersections.sort(key=lambda item: item[0])
+
+    # Punkty podziału z początkiem i końcem
+    split_points: List[Tuple[float, Point2D]] = [(0.0, polyline[0])]
+    for s, pt in intersections:
+        if s > 1e-4 and s < total_len - 1e-4:
+            split_points.append((s, pt))
+    split_points.append((total_len, polyline[-1]))
+
+    if len(split_points) < 3:
+        # Tylko początek i koniec (przecięcia były na samych końcach linii)
+        return None
+
+    # 4. Podział polilinii na podfragmenty
+    sub_pieces: List[List[Point2D]] = []
+    for k in range(len(split_points) - 1):
+        s_start, p_start = split_points[k]
+        s_end, p_end = split_points[k + 1]
+
+        piece: List[Point2D] = [p_start]
+        # Dodaj oryginalne wierzchołki leżące wewnątrz przedziału (s_start, s_end)
+        for v_idx in range(n):
+            sv = cum_dist[v_idx]
+            if s_start + 1e-4 < sv < s_end - 1e-4:
+                piece.append(polyline[v_idx])
+        piece.append(p_end)
+
+        # Oczyszczenie z duplikatów sąsiednich punktów
+        cleaned_piece: List[Point2D] = [piece[0]]
+        for pt in piece[1:]:
+            if distance(cleaned_piece[-1], pt) > 1e-5:
+                cleaned_piece.append(pt)
+        if len(cleaned_piece) >= 2:
+            sub_pieces.append(cleaned_piece)
+
+    if not sub_pieces:
+        return None
+
+    # 5. Wyznaczenie, który fragment znajduje się pod kursorem click_pt
+    best_piece_idx = 0
+    best_dist = float('inf')
+
+    for p_idx, piece in enumerate(sub_pieces):
+        # Odległość punktu click_pt do odcinków fragmentu
+        for i in range(len(piece) - 1):
+            sqr_d, min_pt, after_v, left_of = _point_segment_dist_2d(click_pt, piece[i], piece[i + 1])
+            d = math.sqrt(sqr_d)
+            if d < best_dist:
+                best_dist = d
+                best_piece_idx = p_idx
+
+    trimmed_piece = sub_pieces[best_piece_idx]
+    remaining_pieces: List[List[Point2D]] = []
+
+    # Łączenie sąsiadujących pozostałych części w spójne polilinie
+    current_run: List[Point2D] = []
+    for p_idx, piece in enumerate(sub_pieces):
+        if p_idx == best_piece_idx:
+            if current_run:
+                remaining_pieces.append(current_run)
+                current_run = []
+        else:
+            if not current_run:
+                current_run = list(piece)
+            else:
+                # Jeśli koniec obecnego odcinka pokrywa się z początkiem kolejnego
+                if distance(current_run[-1], piece[0]) < 1e-4:
+                    current_run.extend(piece[1:])
+                else:
+                    remaining_pieces.append(current_run)
+                    current_run = list(piece)
+    if current_run:
+        remaining_pieces.append(current_run)
+
+    return trimmed_piece, remaining_pieces
+
+
+def _point_segment_dist_2d(pt: Point2D, p1: Point2D, p2: Point2D) -> Tuple[float, Point2D, int, bool]:
+    """Oblicza kwadrat odległości punktu pt do odcinka [p1, p2]."""
+    x0, y0 = pt
+    x1, y1 = p1
+    x2, y2 = p2
+
+    dx = x2 - x1
+    dy = y2 - y1
+    len_sq = dx * dx + dy * dy
+    if len_sq < 1e-12:
+        return (x0 - x1)**2 + (y0 - y1)**2, p1, 1, False
+
+    t = max(0.0, min(1.0, ((x0 - x1) * dx + (y0 - y1) * dy) / len_sq))
+    proj_x = x1 + t * dx
+    proj_y = y1 + t * dy
+    sqr_dist = (x0 - proj_x)**2 + (y0 - proj_y)**2
+    left_of = (dx * (y0 - y1) - dy * (x0 - x1)) > 0
+    return sqr_dist, (proj_x, proj_y), 1, left_of
+
+
+class FilletTwoLinesResult:
+    """Wynik operacji zaokrąglenia (fillet) dwóch linii."""
+
+    def __init__(
+        self,
+        apex: Point2D,
+        radius: float,
+        t1: Point2D,
+        t2: Point2D,
+        center: Point2D,
+        arc_points: List[Point2D],
+        line1_kept: List[Point2D],
+        line1_continuation: Optional[List[Point2D]],
+        line1_continues: bool,
+        line2_kept: List[Point2D],
+        line2_continuation: Optional[List[Point2D]],
+        line2_continues: bool,
+        joined_corner: Optional[List[Point2D]]
+    ):
+        self.apex = apex
+        self.radius = radius
+        self.t1 = t1
+        self.t2 = t2
+        self.center = center
+        self.arc_points = arc_points
+        self.line1_kept = line1_kept
+        self.line1_continuation = line1_continuation
+        self.line1_continues = line1_continues
+        self.line2_kept = line2_kept
+        self.line2_continuation = line2_continuation
+        self.line2_continues = line2_continues
+        self.joined_corner = joined_corner
+
+
+def fillet_two_lines_2d(
+    pts1: List[Point2D],
+    click1: Point2D,
+    pts2: List[Point2D],
+    click2: Point2D,
+    radius: float,
+    mode: SamplingMode = SamplingMode.LINEAR_STEP,
+    step_value: float = 1.0,
+    min_segments: int = 4
+) -> Optional[FilletTwoLinesResult]:
+    """
+    Oblicza łuk styczny (fillet) o zadanym promieniu między dwoma liniami pts1 i pts2.
+    Wskazane punkty click1 i click2 decydują, które ramiona linii mają zostać zachowane.
+    Dokonuje automatycznego trimu:
+    - Jeśli linia kończy się przy przecięciu: zostaje skrócona/wydłużona do punktu styczności.
+    - Jeśli linia posiada kontynuację za przecięciem: zostaje rozcięta na część zachowaną (do stycznej)
+      oraz część kontynuacji (od przecięcia dalej), a odcinek między styczną a przecięciem zostaje usunięty.
+    - Jeśli obie linie kończą się przy narożniku: tworzy gotową scaloną polilinię (joined_corner).
+    """
+    if len(pts1) < 2 or len(pts2) < 2:
+        return None
+
+    # 1. Wyszukaj segmenty najbliższe kliknięciom
+    seg1_idx = _find_closest_segment_idx(pts1, click1)
+    seg2_idx = _find_closest_segment_idx(pts2, click2)
+
+    a1, b1 = pts1[seg1_idx], pts1[seg1_idx + 1]
+    a2, b2 = pts2[seg2_idx], pts2[seg2_idx + 1]
+
+    # 2. Punkt przecięcia prostych nośnych segmentów (apex)
+    apex = line_intersection(a1, b1, a2, b2)
+    if apex is None:
+        return None
+
+    # 3. Wektory kierunkowe ramion w stronę punktów kliknięcia
+    u1 = _get_direction_towards_click(a1, b1, apex, click1)
+    u2 = _get_direction_towards_click(a2, b2, apex, click2)
+    if u1 is None or u2 is None:
+        return None
+
+    # Kąt między ramionami
+    dot = max(-1.0, min(1.0, u1[0] * u2[0] + u1[1] * u2[1]))
+    alpha = math.acos(dot)
+    if alpha < math.radians(0.5) or alpha > math.radians(179.5):
+        return None
+
+    half_alpha = alpha / 2.0
+    sin_half = math.sin(half_alpha)
+    tan_half = math.tan(half_alpha)
+
+    eff_radius = min(max(MIN_RADIUS_LIMIT, radius), MAX_RADIUS_LIMIT)
+    d_tangent = eff_radius / tan_half
+
+    # Punkty styczności
+    t1 = (apex[0] + d_tangent * u1[0], apex[1] + d_tangent * u1[1])
+    t2 = (apex[0] + d_tangent * u2[0], apex[1] + d_tangent * u2[1])
+
+    # Środek okręgu
+    bisector = (u1[0] + u2[0], u1[1] + u2[1])
+    len_bis = math.hypot(bisector[0], bisector[1])
+    if len_bis < 1e-6:
+        return None
+    w = (bisector[0] / len_bis, bisector[1] / len_bis)
+    center = (apex[0] + (eff_radius / sin_half) * w[0], apex[1] + (eff_radius / sin_half) * w[1])
+
+    # Próbkowanie łuku
+    a_t1 = math.atan2(t1[1] - center[1], t1[0] - center[0])
+    a_t2 = math.atan2(t2[1] - center[1], t2[0] - center[0])
+    d_ccw = normalize_angle(a_t2 - a_t1)
+    is_ccw = (d_ccw < math.pi)
+
+    arc_points = sample_arc(
+        center=center,
+        radius=eff_radius,
+        start_angle=a_t1,
+        end_angle=a_t2,
+        is_ccw=is_ccw,
+        mode=mode,
+        step_value=step_value,
+        min_segments=min_segments,
+        exact_endpoints=(t1, t2)
+    )
+
+    # 4. Analiza geometrii linii 1 i 2 (trim / split)
+    line1_kept, line1_cont, line1_continues = _trim_or_split_line(pts1, seg1_idx, apex, u1, t1)
+    line2_kept, line2_cont, line2_continues = _trim_or_split_line(pts2, seg2_idx, apex, u2, t2)
+
+    # 5. Scalanie narożnika w jedną polilinię (gdy żadna z linii nie kontynuuje się za przecięcie)
+    joined_corner = None
+    if not line1_continues and not line2_continues and line1_kept and line2_kept:
+        # Upewniamy się, że line1_kept biegnie w stronę t1
+        p1_oriented = list(line1_kept)
+        if distance(p1_oriented[0], t1) < distance(p1_oriented[-1], t1):
+            p1_oriented.reverse()
+
+        # Upewniamy się, że line2_kept zaczyna się przy t2 i biegnie ku końcowi
+        p2_oriented = list(line2_kept)
+        if distance(p2_oriented[-1], t2) < distance(p2_oriented[0], t2):
+            p2_oriented.reverse()
+
+        # Składamy: p1_oriented (do t1) + arc_points (od t1 do t2) + p2_oriented (od t2 dalej)
+        combined: List[Point2D] = list(p1_oriented)
+        for pt in arc_points:
+            if distance(combined[-1], pt) > 1e-5:
+                combined.append(pt)
+        for pt in p2_oriented:
+            if distance(combined[-1], pt) > 1e-5:
+                combined.append(pt)
+
+        joined_corner = combined
+
+    return FilletTwoLinesResult(
+        apex=apex,
+        radius=eff_radius,
+        t1=t1,
+        t2=t2,
+        center=center,
+        arc_points=arc_points,
+        line1_kept=line1_kept,
+        line1_continuation=line1_cont,
+        line1_continues=line1_continues,
+        line2_kept=line2_kept,
+        line2_continuation=line2_cont,
+        line2_continues=line2_continues,
+        joined_corner=joined_corner
+    )
+
+
+def _find_closest_segment_idx(pts: List[Point2D], pt: Point2D) -> int:
+    best_idx = 0
+    best_dist = float('inf')
+    for i in range(len(pts) - 1):
+        sqr_d, min_pt, after_v, left_of = _point_segment_dist_2d(pt, pts[i], pts[i + 1])
+        if sqr_d < best_dist:
+            best_dist = sqr_d
+            best_idx = i
+    return best_idx
+
+
+def _get_direction_towards_click(p1: Point2D, p2: Point2D, apex: Point2D, click_pt: Point2D) -> Optional[Point2D]:
+    """Zwraca jednostkowy wektor wzdłuż prostej p1->p2 skierowany od apex w stronę punktu click_pt."""
+    dx = p2[0] - p1[0]
+    dy = p2[1] - p1[1]
+    len_seg = math.hypot(dx, dy)
+    if len_seg < 1e-9:
+        return None
+    ux = dx / len_seg
+    uy = dy / len_seg
+
+    # Rzut punktu click na wektor (apex -> click_pt)
+    vx = click_pt[0] - apex[0]
+    vy = click_pt[1] - apex[1]
+    dot = vx * ux + vy * uy
+
+    if dot < 0:
+        return (-ux, -uy)
+    elif dot > 0:
+        return (ux, uy)
+    else:
+        # Kursor dokładnie na apex - użyj wektora ku środkowi segmentu
+        mid_x = (p1[0] + p2[0]) / 2.0 - apex[0]
+        mid_y = (p1[1] + p2[1]) / 2.0 - apex[1]
+        dot_mid = mid_x * ux + mid_y * uy
+        return (ux, uy) if dot_mid >= 0 else (-ux, -uy)
+
+
+def _trim_or_split_line(
+    pts: List[Point2D],
+    clicked_seg_idx: int,
+    apex: Point2D,
+    u_dir: Point2D,
+    tangent_pt: Point2D
+) -> Tuple[List[Point2D], Optional[List[Point2D]], bool]:
+    """
+    Przycinanie lub rozcinanie linii wzdłuż wektora u_dir:
+    - Rzutuje wierzchołki linii na oś u_dir ze środkiem w apex.
+    - Wierzchołki o s > 0 leżą po stronie zachowanej.
+    - Wierzchołki o s < 0 leżą po przeciwnej stronie apex (kontynuacja za przecięciem).
+    """
+    n = len(pts)
+    if n < 2:
+        return list(pts), None, False
+
+    # Wyznaczenie parametru s dla każdego wierzchołka: s = (pt - apex) . u_dir
+    s_vals = [(pt[0] - apex[0]) * u_dir[0] + (pt[1] - apex[1]) * u_dir[1] for pt in pts]
+    d_tangent = math.hypot(tangent_pt[0] - apex[0], tangent_pt[1] - apex[1])
+
+    # Czy linia ma wyraźną kontynuację za przecięciem (w stronę s < 0)?
+    min_s = min(s_vals)
+    has_continuation = (min_s < -max(1.0, 0.05 * d_tangent))
+
+    # Wierzchołki po stronie zachowanej (s > d_tangent)
+    # Znajdź koniec linii po stronie zachowanej
+    # Jeśli linia biegnie od wierzchołka 0 do n-1:
+    s_end0 = s_vals[0]
+    s_endN = s_vals[-1]
+
+    if s_end0 > s_endN:
+        # Wierzchołek 0 to daleki koniec po stronie zachowanej
+        far_idx = 0
+        apex_idx = n - 1
+        step = 1
+    else:
+        # Wierzchołek n-1 to daleki koniec po stronie zachowanej
+        far_idx = n - 1
+        apex_idx = 0
+        step = -1
+
+    kept_pts: List[Point2D] = []
+    idx = far_idx
+    while 0 <= idx < n:
+        if s_vals[idx] >= d_tangent - 1e-4:
+            kept_pts.append(pts[idx])
+        else:
+            break
+        idx += step
+
+    # Zwieńcz część zachowaną punktem styczności tangent_pt
+    if not kept_pts:
+        kept_pts.append(pts[far_idx])
+    if distance(kept_pts[-1], tangent_pt) > 1e-4:
+        kept_pts.append(tangent_pt)
+
+    # Upewnij się, że ma min. 2 punkty
+    if len(kept_pts) < 2:
+        kept_pts.insert(0, pts[far_idx])
+
+    if not has_continuation:
+        return kept_pts, None, False
+
+    # Część kontynuacji (za apex)
+    cont_pts: List[Point2D] = [apex]
+    # Idziemy od strony apex_idx (tam gdzie s < 0)
+    cont_idx = apex_idx
+    cont_step = 1 if apex_idx < far_idx else -1
+    raw_cont: List[Point2D] = []
+
+    c_i = cont_idx
+    while 0 <= c_i < n:
+        if s_vals[c_i] <= 1e-4:
+            raw_cont.append(pts[c_i])
+        else:
+            break
+        c_i += cont_step
+
+    if raw_cont:
+        # Uporządkuj od apex w dal
+        if distance(raw_cont[0], apex) > distance(raw_cont[-1], apex):
+            raw_cont.reverse()
+        for pt in raw_cont:
+            if distance(cont_pts[-1], pt) > 1e-4:
+                cont_pts.append(pt)
+
+    if len(cont_pts) < 2:
+        return kept_pts, None, False
+
+    return kept_pts, cont_pts, True
+
