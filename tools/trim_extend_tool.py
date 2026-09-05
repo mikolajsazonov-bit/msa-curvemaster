@@ -17,7 +17,8 @@ from qgis.PyQt.QtWidgets import (
     QActionGroup,
     QWidgetAction,
     QMenu,
-    QLabel
+    QLabel,
+    QApplication
 )
 from qgis.gui import (
     QgsMapMouseEvent,
@@ -86,7 +87,8 @@ class TrimExtendTool(BaseCurveTool):
         self.snap_indicator = QgsSnapIndicator(self.canvas())
 
         # Ostatnia pozycja kursora dla natychmiastowej aktualizacji przy wciśnięciu Shift
-        self._last_mouse_event: Optional[QgsMapMouseEvent] = None
+        self._last_canvas_pt: Optional[QgsPointXY] = None
+        self._last_pixel_pos: Optional[QPoint] = None
 
         # Zapamiętany stan bieżącej operacji hover
         self._hover_feature_id: Optional[int] = None
@@ -104,6 +106,8 @@ class TrimExtendTool(BaseCurveTool):
 
     def deactivate(self):
         self.clear_preview()
+        self._last_canvas_pt = None
+        self._last_pixel_pos = None
         if hasattr(self, 'snap_indicator') and self.snap_indicator:
             self.snap_indicator.setVisible(False)
         super().deactivate()
@@ -186,7 +190,12 @@ class TrimExtendTool(BaseCurveTool):
         self._set_status_tip(tr(f"MSA Trim/Extend: Scope set to: {name}", f"MSA Trim/Extend: Ustawiono zakres krawędzi: {name}"))
 
     def canvasMoveEvent(self, e: QgsMapMouseEvent):
-        self._last_mouse_event = e
+        self._last_canvas_pt = QgsPointXY(e.mapPoint())
+        self._last_pixel_pos = QPoint(e.pos())
+        is_shift = bool(e.modifiers() & Qt.ShiftModifier)
+        self._update_hover_preview(self._last_canvas_pt, self._last_pixel_pos, is_shift)
+
+    def _update_hover_preview(self, canvas_pt: QgsPointXY, pixel_pos: QPoint, is_shift: bool):
         active_layer = self.active_editable_layer()
         if not active_layer or active_layer.geometryType() != QgsWkbTypes.LineGeometry:
             self.clear_preview()
@@ -196,11 +205,10 @@ class TrimExtendTool(BaseCurveTool):
             ))
             return
 
-        canvas_pt = e.mapPoint()
         layer_pt = self.to_layer_point(active_layer, canvas_pt)
 
         # Sprawdzenie przyciągania QGIS
-        match = self.canvas().snappingUtils().snapToMap(e.pos())
+        match = self.canvas().snappingUtils().snapToMap(pixel_pos)
         if match.isValid():
             self.snap_indicator.setMatch(match)
             self.snap_indicator.setVisible(True)
@@ -211,7 +219,6 @@ class TrimExtendTool(BaseCurveTool):
         target_info = self._find_target_line_near(active_layer, canvas_pt, layer_pt)
         if not target_info:
             self.clear_preview()
-            is_shift = bool(e.modifiers() & Qt.ShiftModifier)
             hint = tr("[Shift = Trim]", "[Shift = Przytnij (Trim)]") if not is_shift else tr("[Release Shift = Extend]", "[Zwolnij Shift = Wydłuż (Extend)]")
             self._set_status_tip(f"MSA Trim/Extend: {tr('Hover over a line in the active layer.', 'Najedź na linię w aktywnej warstwie.')} {hint}")
             return
@@ -229,8 +236,6 @@ class TrimExtendTool(BaseCurveTool):
 
         # Zbierz wszystkie krawędzie tnące/graniczne
         boundaries = self._collect_boundary_lines(active_layer, feat_id)
-
-        is_shift = bool(e.modifiers() & Qt.ShiftModifier)
 
         if is_shift:
             # TRYB TRIM (Utnij)
@@ -416,8 +421,9 @@ class TrimExtendTool(BaseCurveTool):
                     layer.destroyEditCommand()
 
         self.clear_preview()
-        if self._last_mouse_event:
-            self.canvasMoveEvent(self._last_mouse_event)
+        if self._last_canvas_pt and self._last_pixel_pos:
+            is_shift = bool(QApplication.keyboardModifiers() & Qt.ShiftModifier)
+            self._update_hover_preview(self._last_canvas_pt, self._last_pixel_pos, is_shift)
 
     def _commit_trim(self, layer: QgsVectorLayer):
         """Zatwierdzenie operacji Trim."""
@@ -473,12 +479,13 @@ class TrimExtendTool(BaseCurveTool):
             )
 
         self.clear_preview()
-        if self._last_mouse_event:
-            self.canvasMoveEvent(self._last_mouse_event)
+        if self._last_canvas_pt and self._last_pixel_pos:
+            is_shift = bool(QApplication.keyboardModifiers() & Qt.ShiftModifier)
+            self._update_hover_preview(self._last_canvas_pt, self._last_pixel_pos, is_shift)
 
     def keyPressEvent(self, e):
-        if e.key() == Qt.Key_Shift and self._last_mouse_event:
-            self.canvasMoveEvent(self._last_mouse_event)
+        if e.key() == Qt.Key_Shift and self._last_canvas_pt and self._last_pixel_pos:
+            self._update_hover_preview(self._last_canvas_pt, self._last_pixel_pos, is_shift=True)
             return
         elif e.key() == Qt.Key_Escape:
             self.clear_preview()
@@ -486,8 +493,8 @@ class TrimExtendTool(BaseCurveTool):
         super().keyPressEvent(e)
 
     def keyReleaseEvent(self, e):
-        if e.key() == Qt.Key_Shift and self._last_mouse_event:
-            self.canvasMoveEvent(self._last_mouse_event)
+        if e.key() == Qt.Key_Shift and self._last_canvas_pt and self._last_pixel_pos:
+            self._update_hover_preview(self._last_canvas_pt, self._last_pixel_pos, is_shift=False)
             return
         super().keyReleaseEvent(e)
 

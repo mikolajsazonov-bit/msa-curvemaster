@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <rect width="30" height="30" x="1" y="1" rx="6" fill="#f8f9fa" stroke="#ced4da" stroke-width="1.2"/>
+  <!-- Curb boundary lines (gray) -->
+  <path d="M 4 8 L 28 8" stroke="#6c757d" stroke-width="1.8" stroke-linecap="round"/>
+  <path d="M 4 24 L 28 24" stroke="#6c757d" stroke-width="1.8" stroke-linecap="round"/>
+  <!-- Poured pavement area (blue polygon with curved boundary limit) -->
+  <path d="M 4 8 L 18 8 A 8 8 0 0 1 18 24 L 4 24 Z" fill="#0d6efd" fill-opacity="0.35" stroke="#0d6efd" stroke-width="1.5" stroke-linejoin="round"/>
+  <!-- Paint bucket pouring liquid -->
+  <g transform="translate(14, 5) rotate(35)">
+    <!-- Bucket body -->
+    <path d="M 0 0 L 8 0 L 7 9 L 1 9 Z" fill="#495057" stroke="#212529" stroke-width="0.8"/>
+    <!-- Bucket rim -->
+    <ellipse cx="4" cy="0" rx="4" ry="1.2" fill="#adb5bd" stroke="#212529" stroke-width="0.8"/>
+    <!-- Bucket handle -->
+    <path d="M 0 1 A 4 4 0 0 1 8 1" fill="none" stroke="#212529" stroke-width="0.8"/>
+  </g>
+  <!-- Pouring stream / drop -->
+  <path d="M 17 12 Q 15 15 14 17" fill="none" stroke="#0d6efd" stroke-width="1.8" stroke-linecap="round"/>
+  <circle cx="14" cy="17" r="1.5" fill="#0d6efd"/>
+</svg>

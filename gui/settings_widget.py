@@ -5,7 +5,7 @@ MSA: CurveMaster - Kompaktowy pasek ustawień parametrów wtyczki.
 Autor: Mikołaj Sazonov
 """
 
-from typing import Optional
+from typing import Optional, List, Dict, Any
 from qgis.PyQt.QtCore import Qt, pyqtSignal
 from qgis.PyQt.QtWidgets import (
     QWidget,
@@ -37,6 +37,8 @@ class CurveSettingsWidget(QWidget):
     """
 
     settingsChanged = pyqtSignal()
+    pourCategoryChanged = pyqtSignal(str)
+    pourLayersDialogRequested = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -152,12 +154,42 @@ class CurveSettingsWidget(QWidget):
         polar_layout.addWidget(self.btn_polar_settings)
         main_layout.addWidget(self.polar_container)
 
+        # Kontener wylewania nawierzchni (Smart Pour)
+        self.pour_container = QWidget(self)
+        pour_layout = QHBoxLayout(self.pour_container)
+        pour_layout.setContentsMargins(0, 0, 0, 0)
+        pour_layout.setSpacing(4)
+
+        lbl_pour = QLabel(tr("Surface:", "Nawierzchnia:"))
+        lbl_pour.setStyleSheet("font-weight: 500; font-size: 11px;")
+        self.combo_pour_category = QComboBox()
+        self.combo_pour_category.setMinimumWidth(120)
+        self.combo_pour_category.setToolTip(tr(
+            "Active surface category to pour (auto-merges touching polygons of same category).\nUse Tab while drawing to cycle categories.",
+            "Aktywna kategoria nawierzchni (automatycznie scala stykające się poligony tej samej kategorii).\nKlawisz Tab w trakcie rysowania przełącza kategorie."
+        ))
+        self.combo_pour_category.currentTextChanged.connect(self._on_pour_category_changed)
+
+        self.btn_pour_layers = QToolButton()
+        self.btn_pour_layers.setText(tr("Edges...", "Krawędzie..."))
+        self.btn_pour_layers.setToolTip(tr(
+            "Select project layers that act as boundaries for pouring (curbs, borders)",
+            "Wskaż warstwy projektu stanowiące krawędzie/granice dla wylewania nawierzchni"
+        ))
+        self.btn_pour_layers.clicked.connect(lambda: self.pourLayersDialogRequested.emit())
+
+        pour_layout.addWidget(lbl_pour)
+        pour_layout.addWidget(self.combo_pour_category)
+        pour_layout.addWidget(self.btn_pour_layers)
+        main_layout.addWidget(self.pour_container)
+
     def set_tool_mode(self, mode: Optional[str]):
         """
         Zmienia tryb wyświetlania paska w zależności od aktywnego narzędzia:
         - 'bend': rozwija tylko opcje próbkowania
         - 'fillet': rozwija opcje próbkowania oraz parametry zaokrąglania
         - 'polar': rozwija opcje kroku kąta i bazy pomiaru polarnego
+        - 'pour': rozwija opcje kategorii nawierzchni Smart Pour
         - None / 'none': zwija/ukrywa cały panel ustawień z paska narzędzi
         """
         self._current_mode = mode
@@ -165,17 +197,26 @@ class CurveSettingsWidget(QWidget):
             self.sampling_container.setVisible(True)
             self.fillet_container.setVisible(False)
             self.polar_container.setVisible(False)
+            self.pour_container.setVisible(False)
             self.setVisible(True)
         elif mode in ('fillet', 'fillet_lines'):
             self.sampling_container.setVisible(True)
             self.fillet_container.setVisible(True)
             self.polar_container.setVisible(False)
+            self.pour_container.setVisible(False)
             self.setVisible(True)
         elif mode == 'polar':
             self.sampling_container.setVisible(False)
             self.fillet_container.setVisible(False)
             self.polar_container.setVisible(True)
+            self.pour_container.setVisible(False)
             self._sync_polar_ui_from_state()
+            self.setVisible(True)
+        elif mode == 'pour':
+            self.sampling_container.setVisible(False)
+            self.fillet_container.setVisible(False)
+            self.polar_container.setVisible(False)
+            self.pour_container.setVisible(True)
             self.setVisible(True)
         else:
             self.setVisible(False)
@@ -310,3 +351,66 @@ class CurveSettingsWidget(QWidget):
         idx = self.combo_mode.findData(smode)
         if idx >= 0:
             self.combo_mode.setCurrentIndex(idx)
+
+    def _on_pour_category_changed(self, text: str):
+        self.pourCategoryChanged.emit(text)
+
+    def set_pour_categories(
+        self,
+        categories: List[str],
+        active: Optional[str] = None,
+        category_styles: Optional[Dict[str, Any]] = None
+    ):
+        """Ustawia listę dostępnych kategorii w liście rozwijanej wraz z próbkami stylizacji z warstwy."""
+        self.combo_pour_category.blockSignals(True)
+        self.combo_pour_category.clear()
+        for cat in categories:
+            icon = None
+            if category_styles:
+                style = category_styles.get(cat) or category_styles.get(cat.lower())
+                if style and hasattr(style, 'get_icon'):
+                    icon = style.get_icon(16)
+            if icon and not icon.isNull():
+                self.combo_pour_category.addItem(icon, cat)
+            else:
+                self.combo_pour_category.addItem(cat)
+
+        # Opcja dodania nowej kategorii
+        self.combo_pour_category.addItem(tr("[+ New Category...]", "[➕ Nowa kategoria...]"))
+
+        if active:
+            idx = self.combo_pour_category.findText(active)
+            if idx >= 0:
+                self.combo_pour_category.setCurrentIndex(idx)
+            elif self.combo_pour_category.count() > 0:
+                self.combo_pour_category.setCurrentIndex(0)
+        elif self.combo_pour_category.count() > 0:
+            self.combo_pour_category.setCurrentIndex(0)
+        self.combo_pour_category.blockSignals(False)
+
+    def current_pour_category(self) -> str:
+        return self.combo_pour_category.currentText()
+
+    def set_current_pour_category(self, name: str, style: Optional[Any] = None):
+        idx = self.combo_pour_category.findText(name)
+        if idx >= 0:
+            self.combo_pour_category.setCurrentIndex(idx)
+        else:
+            pos = max(0, self.combo_pour_category.count() - 1)
+            icon = style.get_icon(16) if (style and hasattr(style, 'get_icon')) else None
+            if icon and not icon.isNull():
+                self.combo_pour_category.insertItem(pos, icon, name)
+            else:
+                self.combo_pour_category.insertItem(pos, name)
+            self.combo_pour_category.setCurrentIndex(pos)
+
+    def cycle_pour_category(self, step: int = 1) -> str:
+        """Przeskakuje do kolejnej kategorii (klawisz Tab)."""
+        count = self.combo_pour_category.count()
+        if count <= 0:
+            return ""
+        curr = self.combo_pour_category.currentIndex()
+        next_idx = (curr + step) % count
+        self.combo_pour_category.setCurrentIndex(next_idx)
+        return self.combo_pour_category.currentText()
+

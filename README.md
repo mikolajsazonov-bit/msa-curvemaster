@@ -60,15 +60,38 @@ Wtyczka do interaktywnej korekty kształtów geometrii wektorowych (polilinii or
 
 ---
 
+### 5. Zalej nawierzchnię (*CAD Smart Pour*) [NOWOŚĆ v1.4.0]
+* **Jak używać:**
+  1. Włącz tryb edycji dla warstwy poligonowej (np. `Nawierzchnie`, `Chodniki`, `Jezdnie`).
+  2. Aktywuj narzędzie **Zalej nawierzchnię** na pasku narzędzi.
+  3. Narzędzie automatycznie odczyta unikalne kategorie z kolumny kategorii (np. `kategoria`, `typ`, `nawierzchnia`) lub automatycznie utworzy pole `kategoria`, jeśli go brakuje.
+  4. Domyślnie aktywna jest pierwsza alfabetycznie lub ostatnio używana nawierzchnia (np. *Asfalt*).
+  5. **Wskazanie punktu startowego $P_0$:**
+     - Kliknij lewym przyciskiem myszy w korytarzu pomiędzy liniami krawężników lub granicami innych nawierzchni.
+  6. **Dynamiczny promień odcięcia ($R$) i podgląd na żywo:**
+     - Przesuwaj kursor myszy — poligon rozlewa się wzdłuż krawężników w czasie rzeczywistym.
+     - Jeśli korytarz jest otwarty, odcięcie następuje łukiem w odległości zadanej promieniem $R$.
+     - W pływającym okienku CAD HUD widać aktualny zasięg oraz nazwę wylewanej kategorii.
+  7. **Przełączanie kategorii w locie (Klawisz `Tab`):**
+     - Wciśnij `Tab` w trakcie rysowania, aby natychmiast cyklicznie przełączać kategorie (*Asfalt* $\rightarrow$ *Chodnik* $\rightarrow$ *DDR* $\rightarrow$ *Trawa* $\rightarrow$ *Nowa kategoria...*).
+  8. **Zatwierdzenie i Auto-Merge:**
+     - Kliknij lewym przyciskiem myszy pod zadanym promieniem lub naciśnij `Enter` (możesz też wpisać promień z klawiatury, np. `50.0`).
+     - Jeśli wybrano `[➕ Nowa kategoria...]`, w okienku wpisz nazwę (np. `trawa`) — zostanie ona zapisana w atrybucie i dodana do listy.
+     - **Automatyczne scalanie (Auto-Merge):** Jeśli nowo wylana nawierzchnia styka się z istniejącym poligonem tej samej kategorii, zostaje z nim bezszwowo połączona w jeden obiekt!
+  9. *Prawy przycisk myszy lub klawisz `Escape` anuluje operację.*
+
+---
+
 ## 📐 Kompaktowy pasek narzędzi i rozwijane menu
 
 Pasek narzędzi wtyczki został zoptymalizowany pod kątem oszczędności miejsca:
-* **Stan spoczynku:** Na pasku widoczne są 4 zwięzłe ikony narzędzi: `[Wygnij]`, `[Zaokrąglij]`, `[Offset]`, `[Polar]`.
+* **Stan spoczynku:** Na pasku widoczne są zwięzłe ikony narzędzi: `[Wygnij]`, `[Zaokrąglij]`, `[Offset]`, `[Polar]`, `[Zalej nawierzchnię]`.
 * **Rozwijane menu pod przyciskami (strzałka MenuButtonPopup):**
   - **Wygnij odcinek & Zaokrąglij wierzchołek:** Szybki wybór metody próbkowania i opcji.
   - **Prosty offset:** Wybór zakresu wykrywanych obiektów (wszystkie, tylko linie, tylko aktywna warstwa).
   - **Polar Tracking:** Włącznik śledzenia, wybór kroku kąta (11 presetów), pomiar kąta (Względny do krawędzi vs Bezwzględny) oraz okno dialogowe własnych kątów (*Additional angles* np. 147°).
-* **Automatyczne rozwijanie parametrów:** Po aktywacji danego narzędzia pasek automatycznie rozwija odpowiednie dla niego kontrolki, a po wyłączeniu narzędzia natychmiast zwija je z powrotem.
+  - **Zalej nawierzchnię:** Wybór warstw stanowiących krawędzie (Wszystkie widoczne linie vs Tylko wybrane warstwy z listy), okno wyboru warstw (`Krawędzie...`) oraz opcja uwzględniania granic już wylanych nawierzchni w aktywnej warstwie.
+* **Automatyczne rozwijanie parametrów:** Po aktywacji danego narzędzia pasek automatycznie rozwija odpowiednie dla niego kontrolki (np. wybór nawierzchni oraz przycisk `Krawędzie...` dla Smart Pour), a po wyłączeniu narzędzia natychmiast zwija je z powrotem.
 
 ## ⚙️ Tryby próbkowania łuku (Dyskretyzacja)
 

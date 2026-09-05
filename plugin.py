@@ -21,6 +21,7 @@ from .tools.two_line_fillet_tool import TwoLineFilletTool
 from .tools.trim_extend_tool import TrimExtendTool
 from .tools.offset_tool import OffsetTool
 from .tools.polar_digitize_tool import PolarDigitizeTool
+from .tools.pavement_pour_tool import PavementPourTool
 from .core.polar_background_manager import PolarBackgroundManager
 
 
@@ -43,6 +44,7 @@ class MSACurveMasterPlugin:
         self.action_trim_extend: QAction = None
         self.action_offset: QAction = None
         self.action_polar: QAction = None
+        self.action_pour: QAction = None
         self.action_group: QActionGroup = None
 
         self.bend_tool: BendSegmentTool = None
@@ -51,6 +53,7 @@ class MSACurveMasterPlugin:
         self.trim_extend_tool: TrimExtendTool = None
         self.offset_tool: OffsetTool = None
         self.polar_tool: PolarDigitizeTool = None
+        self.pour_tool: PavementPourTool = None
         self.polar_bg_manager: PolarBackgroundManager = None
 
         self.btn_bend: QToolButton = None
@@ -59,6 +62,7 @@ class MSACurveMasterPlugin:
         self.btn_trim_extend: QToolButton = None
         self.btn_offset: QToolButton = None
         self.btn_polar: QToolButton = None
+        self.btn_pour: QToolButton = None
 
     def tr(self, message_en: str, message_pl: str = None) -> str:
         from .core.i18n import tr as i18n_tr
@@ -91,6 +95,7 @@ class MSACurveMasterPlugin:
         self.trim_extend_tool = TrimExtendTool(self.canvas, self.settings_widget, self.iface)
         self.offset_tool = OffsetTool(self.canvas, self.settings_widget, self.iface)
         self.polar_tool = PolarDigitizeTool(self.canvas, self.settings_widget, self.iface)
+        self.pour_tool = PavementPourTool(self.canvas, self.settings_widget, self.iface)
 
         # 4. Asystent w tle (dla standardowych narzędzi QGIS)
         self.polar_bg_manager = PolarBackgroundManager(self.iface)
@@ -174,6 +179,19 @@ class MSACurveMasterPlugin:
         ))
         self.action_polar.triggered.connect(self._toggle_polar_tool)
 
+        icon_pour = self._load_icon('icons/pavement_pour.svg')
+        self.action_pour = QAction(
+            icon_pour,
+            self.tr('Pour Pavement (Smart Pour)', 'Zalej nawierzchnię (CAD Smart Pour)'),
+            self.iface.mainWindow()
+        )
+        self.action_pour.setCheckable(True)
+        self.action_pour.setStatusTip(self.tr(
+            'MSA: Interactively pour pavement between curbs with dynamic radius, Tab category cycling, and Auto-Merge',
+            'MSA: Interaktywnie zalej nawierzchnię między krawężnikami z dynamicznym promieniem, zmianą Tab i Auto-Merge'
+        ))
+        self.action_pour.triggered.connect(self._toggle_pour_tool)
+
         # Grupa akcji
         self.action_group = QActionGroup(self.iface.mainWindow())
         self.action_group.setExclusive(False)
@@ -183,6 +201,7 @@ class MSACurveMasterPlugin:
         self.action_group.addAction(self.action_trim_extend)
         self.action_group.addAction(self.action_offset)
         self.action_group.addAction(self.action_polar)
+        self.action_group.addAction(self.action_pour)
 
         # 6. Przyciski QToolButton z rozwijanym menu (MenuButtonPopup)
         self.btn_bend = QToolButton(self.toolbar)
@@ -215,6 +234,11 @@ class MSACurveMasterPlugin:
         self.btn_polar.setPopupMode(QToolButton.MenuButtonPopup)
         self.btn_polar.setMenu(self.polar_tool.create_dropdown_menu(self.btn_polar))
 
+        self.btn_pour = QToolButton(self.toolbar)
+        self.btn_pour.setDefaultAction(self.action_pour)
+        self.btn_pour.setPopupMode(QToolButton.MenuButtonPopup)
+        self.btn_pour.setMenu(self.pour_tool.create_dropdown_menu(self.btn_pour))
+
         # 7. Dodanie kontrolek do paska narzędzi
         self.toolbar.addWidget(self.btn_bend)
         self.toolbar.addWidget(self.btn_fillet)
@@ -222,6 +246,7 @@ class MSACurveMasterPlugin:
         self.toolbar.addWidget(self.btn_trim_extend)
         self.toolbar.addWidget(self.btn_offset)
         self.toolbar.addWidget(self.btn_polar)
+        self.toolbar.addWidget(self.btn_pour)
         self.toolbar.addSeparator()
         self.toolbar.addWidget(self.settings_widget)
 
@@ -232,6 +257,7 @@ class MSACurveMasterPlugin:
         self.iface.addPluginToVectorMenu(self.tr('MSA: CurveMaster'), self.action_trim_extend)
         self.iface.addPluginToVectorMenu(self.tr('MSA: CurveMaster'), self.action_offset)
         self.iface.addPluginToVectorMenu(self.tr('MSA: CurveMaster'), self.action_polar)
+        self.iface.addPluginToVectorMenu(self.tr('MSA: CurveMaster'), self.action_pour)
 
         # 9. Śledzenie zmiany narzędzia na płótnie mapy
         self.canvas.mapToolSet.connect(self._on_map_tool_changed)
@@ -245,7 +271,7 @@ class MSACurveMasterPlugin:
 
         # Jeśli któreś z naszych narzędzi jest aktywne, zresetuj je
         curr_tool = self.canvas.mapTool()
-        if curr_tool in (self.bend_tool, self.fillet_tool, self.fillet_lines_tool, self.trim_extend_tool, self.offset_tool, self.polar_tool):
+        if curr_tool in (self.bend_tool, self.fillet_tool, self.fillet_lines_tool, self.trim_extend_tool, self.offset_tool, self.polar_tool, self.pour_tool):
             self.canvas.unsetMapTool(curr_tool)
 
         if self.bend_tool:
@@ -271,6 +297,10 @@ class MSACurveMasterPlugin:
         if self.polar_tool:
             self.polar_tool.clear_preview()
             self.polar_tool = None
+
+        if self.pour_tool:
+            self.pour_tool.deactivate()
+            self.pour_tool = None
 
         self.polar_bg_manager = None
 
@@ -298,12 +328,17 @@ class MSACurveMasterPlugin:
             self.iface.removePluginVectorMenu(self.tr('MSA: CurveMaster'), self.action_polar)
             self.action_polar = None
 
+        if self.action_pour:
+            self.iface.removePluginVectorMenu(self.tr('MSA: CurveMaster'), self.action_pour)
+            self.action_pour = None
+
         self.btn_bend = None
         self.btn_fillet = None
         self.btn_fillet_lines = None
         self.btn_trim_extend = None
         self.btn_offset = None
         self.btn_polar = None
+        self.btn_pour = None
 
         if self.toolbar:
             del self.toolbar
@@ -316,7 +351,8 @@ class MSACurveMasterPlugin:
             self.action_fillet_lines,
             self.action_trim_extend,
             self.action_offset,
-            self.action_polar
+            self.action_polar,
+            self.action_pour
         ]
         for act in actions:
             if act and act != active_action:
@@ -370,6 +406,14 @@ class MSACurveMasterPlugin:
             if self.canvas.mapTool() == self.polar_tool:
                 self.canvas.unsetMapTool(self.polar_tool)
 
+    def _toggle_pour_tool(self, checked: bool):
+        if checked:
+            self._uncheck_all_except(self.action_pour)
+            self.canvas.setMapTool(self.pour_tool)
+        else:
+            if self.canvas.mapTool() == self.pour_tool:
+                self.canvas.unsetMapTool(self.pour_tool)
+
     def _on_map_tool_changed(self, new_tool):
         if new_tool == self.bend_tool:
             self.action_bend.setChecked(True)
@@ -395,6 +439,10 @@ class MSACurveMasterPlugin:
             self.action_polar.setChecked(True)
             self._uncheck_all_except(self.action_polar)
             self.settings_widget.set_tool_mode('polar')
+        elif new_tool == self.pour_tool:
+            self.action_pour.setChecked(True)
+            self._uncheck_all_except(self.action_pour)
+            self.settings_widget.set_tool_mode('pour')
         else:
             self._uncheck_all_except(None)
             self.settings_widget.set_tool_mode('none')
