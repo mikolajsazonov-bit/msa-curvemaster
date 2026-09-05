@@ -1,10 +1,25 @@
-# MSA: CurveMaster — Wtyczka do QGIS 3.x
+# MSA: CurveMaster 📐🪣
 
-Wtyczka do interaktywnej korekty kształtów geometrii wektorowych (polilinii oraz poligonów) poprzez tworzenie zinterpolowanych łuków o zadanej gęstości.
+**MSA: CurveMaster** to zaawansowany zestaw precyzyjnych narzędzi inżynierskich CAD dla **QGIS 3.x**, stworzony z myślą o projektantach dróg, architektach krajobrazu, urbanistach i inżynierach GIS. Przenosi ergonomię i płynność pracy znaną z programów AutoCAD czy MicroStation bezpośrednio do środowiska QGIS.
+
+> **GitHub Repository About / Description:**  
+> *EN:* CAD engineering toolkit for QGIS: interactive corner/two-line fillet rounding, AutoCAD-style Trim/Extend, parallel offset, Polar Tracking digitizing, and CAD Smart Pour pavement filling between curbs with auto-merge and live styling sync.  
+> *PL:* Inżynierski zestaw narzędzi CAD dla QGIS: zaokrąglanie łukami (fillet), docinanie i wydłużanie (Trim/Extend), offset równoległy, rysowanie z Polar Trackingiem oraz interaktywne wylewanie nawierzchni (Smart Pour) między krawężnikami z automatycznym scalaniem.
 
 ---
 
-## 🚀 Główne funkcjonalności
+### ✨ Główne moduły i funkcjonalności:
+* **🪣 CAD Smart Pour (Zalej nawierzchnię):** interaktywne wypełnianie poligonami korytarzy i przestrzeni między krawężnikami w skali 1:500 z dynamicznym promieniem odcięcia, automatycznym scalaniem (*Auto-Merge*) nawierzchni tej samej kategorii, bezpośrednią synchronizacją ze stylizacją warstwy oraz elastycznym wyborem atrybutu kategoryzacji.
+* **🎯 Zaokrąglanie i łuki (Fillet):** dynamiczne wyginanie segmentów w łuki oraz zaokrąglanie narożników obiektów i dwóch niezależnych linii z automatycznym docinaniem i podglądem na żywo.
+* **✂️ Trim / Extend:** szybkie docinanie i wydłużanie linii do krawędzi obiektów z dowolnych warstw projektu (dokładnie jak w AutoCAD).
+* **📐 Prosty offset równoległy:** dynamiczny podgląd odsunięcia z zapamiętywaniem zadanej odległości CAD i błyskawicznym powtarzaniem operacji.
+* **🧭 Rysowanie z Polar Trackingiem:** precyzyjna digitalizacja ze śledzeniem kątów biegunowych (np. 15°, 45°, 90°) i blokowaniem azymutu krawędzi odniesienia.
+* **⌨️ Pływające nakładki CAD HUD:** wprowadzanie precyzyjnych wartości (promienie, odległości, kąty) bezpośrednio z klawiatury w trakcie rysowania.
+* **↩️ Pełna obsługa Undo/Redo:** bezpieczna obsługa transakcji i edycji geometrii bez kolizji kluczy `fid` (zgodność z GeoPackage, PostGIS, Shapefile).
+
+---
+
+## 🚀 Opis szczegółowy narzędzi
 
 ### 1. Wyginanie odcinka (*Bend Segment / Arc Drag*)
 * **Jak używać:**
@@ -19,27 +34,47 @@ Wtyczka do interaktywnej korekty kształtów geometrii wektorowych (polilinii or
 * **Jak używać:**
   1. Aktywuj narzędzie **Zaokrąglanie wierzchołka** na pasku narzędzi.
   2. Najedź na wierzchołek narożnika/załamania (podświetli się punkt).
-  3. **Tryb interaktywny:** Kliknij i przeciągnij myszą, aby dynamicznie ustalić promień zaokrąglenia i kliknij ponownie, aby zatwierdzić (lub wpisz wartość w okienku CAD i naciśnij `Enter`).
-  4. **Tryb stałego promienia:** W menu rozwijanym lub po rozwinięciu opcji odznacz *Interaktywny*, wpisz żądany promień (np. `5.0 m`) i kliknij narożnik — zaokrąglenie zostanie wykonane natychmiastowo.
+  3. **Tryb interaktywny:** Kliknij i przeciągnij myszą, aby dynamicznie ustalić promień zaokrąglenia i kliknij ponownie, aby zatwierdzić (lub wpisz wartość w okienku CAD HUD i naciśnij `Enter`).
+  4. **Tryb stałego promienia:** W menu rozwijanym odznacz *Interaktywny*, wpisz żądany promień (np. `5.0 m`) i kliknij narożnik — zaokrąglenie zostanie wykonane natychmiastowo.
 
-### 3. Prosty offset (*Parallel Offset Tool*) [NOWOŚĆ v1.1.0]
+---
+
+### 3. Zaokrąglanie dwóch linii (*Two-Line Fillet*)
+* **Jak używać:**
+  1. Aktywuj narzędzie **Zaokrąglij dwie linie** na pasku narzędzi.
+  2. Wskaż pierwszą linię (zostanie podświetlona na niebiesko).
+  3. Wskaż drugą linię — narzędzie wyznaczy wirtualny lub rzeczywisty punkt przecięcia prostych.
+  4. Dynamicznie wskaż promień łuku myszą lub wpisz dokładną wartość w okienku CAD HUD.
+  5. Narzędzie automatycznie wstawi łuk styczny do obu prostych, dociąwszy nadmiarowe ramiona narożnika (*Auto-Trim*) lub łącząc je w jedną ciągłą polilinię.
+
+---
+
+### 4. Utnij / Wydłuż (*AutoCAD-style Trim / Extend*)
+* **Jak używać:**
+  1. Włącz tryb edycji dla modyfikowanej warstwy liniowej.
+  2. Aktywuj narzędzie **Trim / Extend** na pasku narzędzi.
+  3. **Wydłużanie (Extend — domyślnie):** Najedź na końcówkę linii i kliknij lewym przyciskiem myszy — odcinek zostanie przedłużony wzdłuż swojej geometrii aż do najbliższej krawędzi obiektu na dowolnej widocznej warstwie.
+  4. **Przycinanie (Trim — z klawiszem `Shift`):** Przytrzymaj klawisz `Shift` i kliknij fragment linii przecinającej inne obiekty — wskazany odcinek zostanie natychmiast odcięty do najbliższego punktu przecięcia.
+
+---
+
+### 5. Prosty offset (*Parallel Offset Tool*)
 * **Jak używać:**
   1. Włącz tryb edycji dla warstwy liniowej lub poligonowej (do niej trafi nowo utworzony obiekt).
   2. Aktywuj narzędzie **Prosty offset** na pasku narzędzi.
   3. Najedź na obiekt (linia, polilinia lub granica poligonu z aktywnej lub widocznej warstwy) — podświetli się na niebiesko:
      - **Cały obiekt / granica:** standardowe najechanie i kliknięcie.
      - **Tylko kliknięty segment:** przytrzymaj klawisz `Ctrl` podczas najeżdżania i kliknięcia.
-  4. Kliknij obiekt i odsuwaj kursor — na płótnie mapy pojawi się dynamiczny, czerwony podgląd offsetu w czasie rzeczywistym, a obok kursora pływające okienko CAD z aktualną odległością w metrach.
+  4. Kliknij obiekt i odsuwaj kursor — na płótnie mapy pojawi się dynamiczny podgląd offsetu w czasie rzeczywistym, a obok kursora pływające okienko CAD z aktualną odległością w metrach.
   5. **Zatwierdzenie:**
      - Kliknij lewym przyciskiem myszy pod żądaną odległością, **LUB**
      - Wpisz z klawiatury dokładną odległość (np. `15.0`) i naciśnij klawisz `Enter` lub `Tab`.
      - **CAD powtarzanie odległości:** Po wykonaniu jednego offsetu przy kolejnych obiektach wystarczy wskazać myszą stronę i nacisnąć `Enter` lub `Tab` — offset zostanie natychmiast utworzony z poprzednią zadaną odległością!
-  6. Zostanie narysowany nowy obiekt w aktywnej warstwie edytowalnej.
-  7. *Prawy przycisk myszy lub klawisz `Escape` anuluje operację.*
+  6. *Prawy przycisk myszy lub klawisz `Escape` anuluje operację.*
 
 ---
 
-### 4. Rysowanie z Polar Trackingiem (*CAD Polar Digitize*) [NOWOŚĆ v1.2.0]
+### 6. Rysowanie z Polar Trackingiem (*CAD Polar Digitize*)
 * **Jak używać:**
   1. Włącz tryb edycji dla warstwy liniowej lub poligonowej.
   2. Aktywuj narzędzie **Rysuj z Polar Trackingiem** na pasku narzędzi.
@@ -47,7 +82,7 @@ Wtyczka do interaktywnej korekty kształtów geometrii wektorowych (polilinii or
      - Kliknij w dowolnym miejscu mapy, **LUB**
      - Najedź na istniejącą linię lub granicę poligonu — krawędź podświetli się na błękitno, a jej azymut w terenie zostanie automatycznie zablokowany jako baza $0^\circ$!
   4. **Śledzenie biegunowe (AutoCAD-style):**
-     - Przesuwając myszą, narzędzie wyświetla zielony promień prowadzący (`Qt.DashLine`) w chwili zbliżenia do zadanego kąta (np. 15°, 30°, 45°, 90°).
+     - Przesuwając myszą, narzędzie wyświetla zielony promień prowadzący w chwili zbliżenia do zadanego kąta (np. 15°, 30°, 45°, 90°).
      - Kąt $90^\circ$ względem krawędzi początkowej wyznacza idealną prostopadłą (kąt prosty), a $180^\circ$ – idealną równoległą.
   5. **Odmierzanie odległości (CAD Overlay):**
      - W pływającym okienku obok kursora wpisz z klawiatury żądaną długość (np. `25`) i naciśnij `Enter` lub `Tab` — wierzchołek zostanie natychmiast postawiony na zadaną odległość wzdłuż przyciągniętego promienia!
@@ -56,28 +91,32 @@ Wtyczka do interaktywnej korekty kształtów geometrii wektorowych (polilinii or
      - Klawisz `Backspace` cofa ostatnio postawiony wierzchołek.
      - `Prawy przycisk myszy` lub klawisz `Enter` kończy rysowanie i tworzy obiekt w aktywnej warstwie (dla poligonów następuje automatyczne domknięcie obrysu).
 * **Asystent w tle (dla narzędzi QGIS):**
-  - Włączenie Polar Trackingu synchronizuje krok kąta w tle z mechanizmem Zaawansowanej Digitalizacji QGIS. Dzięki temu standardowe narzędzia QGIS **Zmień kształt** (`Reshape`) oraz **Rozdziel obiekty** (`Split`) również korzystają z przyciągania do kątów bez otwierania ciężkiego panelu dokującego.
+  - Włączenie Polar Trackingu synchronizuje krok kąta w tle ze standardowymi narzędziami QGIS (*Zmień kształt / Reshape*, *Rozdziel obiekty / Split*).
 
 ---
 
-### 5. Zalej nawierzchnię (*CAD Smart Pour*) [NOWOŚĆ v1.4.0]
+### 7. Zalej nawierzchnię (*CAD Smart Pour*) [v1.4.1]
 * **Jak używać:**
   1. Włącz tryb edycji dla warstwy poligonowej (np. `Nawierzchnie`, `Chodniki`, `Jezdnie`).
   2. Aktywuj narzędzie **Zalej nawierzchnię** na pasku narzędzi.
-  3. Narzędzie automatycznie odczyta unikalne kategorie z kolumny kategorii (np. `kategoria`, `typ`, `nawierzchnia`) lub automatycznie utworzy pole `kategoria`, jeśli go brakuje.
-  4. Domyślnie aktywna jest pierwsza alfabetycznie lub ostatnio używana nawierzchnia (np. *Asfalt*).
-  5. **Wskazanie punktu startowego $P_0$:**
+  3. **Wybór atrybutu kategoryzacji (Pole / Field):**
+     - Na pasku narzędzi oraz w rozwijanym menu narzędzia dostępny jest selektor pola.
+     - Jeśli warstwa posiada stylizację unikalnymi wartościami (*Categorized*), odpowiednie pole i zdefiniowane kategorie zostaną odczytane automatycznie.
+     - Jeśli kategoryzacja nie jest potrzebna, wybierz `[Brak]` — poligon zostanie wylany bez sztucznych atrybutów i bez modyfikacji struktury tabeli.
+  4. **Wskazanie punktu startowego $P_0$:**
      - Kliknij lewym przyciskiem myszy w korytarzu pomiędzy liniami krawężników lub granicami innych nawierzchni.
-  6. **Dynamiczny promień odcięcia ($R$) i podgląd na żywo:**
+  5. **Dynamiczny promień odcięcia ($R$) i podgląd na żywo:**
      - Przesuwaj kursor myszy — poligon rozlewa się wzdłuż krawężników w czasie rzeczywistym.
      - Jeśli korytarz jest otwarty, odcięcie następuje łukiem w odległości zadanej promieniem $R$.
-     - W pływającym okienku CAD HUD widać aktualny zasięg oraz nazwę wylewanej kategorii.
-  7. **Przełączanie kategorii w locie (Klawisz `Tab`):**
-     - Wciśnij `Tab` w trakcie rysowania, aby natychmiast cyklicznie przełączać kategorie (*Asfalt* $\rightarrow$ *Chodnik* $\rightarrow$ *DDR* $\rightarrow$ *Trawa* $\rightarrow$ *Nowa kategoria...*).
-  8. **Zatwierdzenie i Auto-Merge:**
+     - W pływającym okienku CAD HUD widać aktualny promień oraz plakietkę kategorii zsynchronizowaną z kolorystyką legendy QGIS.
+  6. **Przełączanie kategorii w locie (Klawisz `Tab`):**
+     - Wciśnij `Tab` lub `Shift+Tab` w trakcie wskazywania promienia, aby błyskawicznie przełączać kategorie zdefiniowane w stylu warstwy bez przerywania pracy.
+  7. **Zatwierdzenie i Auto-Merge:**
      - Kliknij lewym przyciskiem myszy pod zadanym promieniem lub naciśnij `Enter` (możesz też wpisać promień z klawiatury, np. `50.0`).
-     - Jeśli wybrano `[➕ Nowa kategoria...]`, w okienku wpisz nazwę (np. `trawa`) — zostanie ona zapisana w atrybucie i dodana do listy.
-     - **Automatyczne scalanie (Auto-Merge):** Jeśli nowo wylana nawierzchnia styka się z istniejącym poligonem tej samej kategorii, zostaje z nim bezszwowo połączona w jeden obiekt!
+     - Jeśli wybrano `[➕ Nowa kategoria...]`, w okienku wpisz nazwę nowej nawierzchni.
+     - **Automatyczne scalanie (Auto-Merge):** Jeśli nowo wylana nawierzchnia styka się z istniejącym poligonem tej samej kategorii, zostaje z nim bezszwowo połączona w jeden, spójny obiekt wielokątny.
+  8. **Selektywne warstwy krawędzi:**
+     - Kliknij przycisk `[Krawędzie...]`, aby wskazać wyłącznie warstwy krawężników i obrzeży, eliminując kolizje z warstwami tła (działki, sieci uzbrojenia terenu).
   9. *Prawy przycisk myszy lub klawisz `Escape` anuluje operację.*
 
 ---
