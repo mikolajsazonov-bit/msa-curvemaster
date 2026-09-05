@@ -54,16 +54,22 @@ class TestPavementPourUtils(unittest.TestCase):
         if self.layer.isEditable():
             self.layer.rollBack()
 
-    def test_find_category_field_name(self):
+    def test_find_category_field_name_without_guessing(self):
+        # 1. Warstwa bez stylizacji opartej na unikalnych wartościach -> None (bez zgadywania!)
+        self.assertIsNone(find_category_field_name(self.layer))
+
+        # 2. Warstwa ze stylizacją kategoryzowaną (QgsCategorizedSymbolRenderer)
+        self.layer.setRenderer(QgsCategorizedSymbolRenderer("kategoria", []))
         self.assertEqual(find_category_field_name(self.layer), "kategoria")
 
-        # Warstwa z inną nazwą
+        # 3. Warstwa z inną nazwą w stylizacji kategoryzowanej
         layer2 = QgsVectorLayer("Polygon?crs=EPSG:2180", "Test2", "memory")
         layer2.dataProvider().addAttributes([
             QgsField("id", QVariant.Int),
             QgsField("nawierzchnia", QVariant.String)
         ])
         layer2.updateFields()
+        layer2.setRenderer(QgsCategorizedSymbolRenderer("nawierzchnia", []))
         self.assertEqual(find_category_field_name(layer2), "nawierzchnia")
 
     def test_get_layer_unique_categories_sorted(self):
@@ -81,9 +87,25 @@ class TestPavementPourUtils(unittest.TestCase):
         pr.addFeatures([f1, f2, f3, f4, f5])
         self.layer.updateExtents()
 
-        cats = get_layer_unique_categories(self.layer)
+        cats = get_layer_unique_categories(self.layer, "kategoria")
         # Oczekujemy posortowanych alfabetycznie unikalnych wartości
         self.assertEqual([c.lower() for c in cats], ["asfalt", "chodnik", "trawa"])
+
+    def test_get_layer_unique_categories_empty_no_fallback(self):
+        # Nowa pusta warstwa bez żadnych kategorii -> pusta lista (brak sztucznego fallbacku 'Asfalt')
+        empty_layer = QgsVectorLayer("Polygon?crs=EPSG:2180", "Empty", "memory")
+        empty_layer.dataProvider().addAttributes([QgsField("kategoria", QVariant.String)])
+        empty_layer.updateFields()
+        cats = get_layer_unique_categories(empty_layer, "kategoria")
+        self.assertEqual(cats, [])
+
+    def test_merge_polygon_without_category_field(self):
+        geom = QgsGeometry.fromPolygonXY([[
+            QgsPointXY(0, 0), QgsPointXY(10, 0), QgsPointXY(10, 10), QgsPointXY(0, 10), QgsPointXY(0, 0)
+        ]])
+        success = merge_polygon_with_category(self.layer, geom, None, "")
+        self.assertTrue(success)
+        self.assertEqual(self.layer.featureCount(), 1)
 
     def test_compute_pour_polygon_enclosed(self):
         # Kwadrat 10x10 od (0,0) do (10,10)

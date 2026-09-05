@@ -37,6 +37,7 @@ class CurveSettingsWidget(QWidget):
     """
 
     settingsChanged = pyqtSignal()
+    pourFieldChanged = pyqtSignal(str)
     pourCategoryChanged = pyqtSignal(str)
     pourLayersDialogRequested = pyqtSignal()
 
@@ -160,10 +161,20 @@ class CurveSettingsWidget(QWidget):
         pour_layout.setContentsMargins(0, 0, 0, 0)
         pour_layout.setSpacing(4)
 
+        lbl_field = QLabel(tr("Field:", "Pole:"))
+        lbl_field.setStyleSheet("font-weight: 500; font-size: 11px;")
+        self.combo_pour_field = QComboBox()
+        self.combo_pour_field.setMinimumWidth(85)
+        self.combo_pour_field.setToolTip(tr(
+            "Layer attribute for surface categories (from categorized styling, or choose field; none = unassigned)",
+            "Atrybut warstwy różnicujący kategorie nawierzchni (ze stylizacji lub wybierz pole; brak = bez atrybutu)"
+        ))
+        self.combo_pour_field.currentIndexChanged.connect(self._on_pour_field_changed)
+
         lbl_pour = QLabel(tr("Surface:", "Nawierzchnia:"))
         lbl_pour.setStyleSheet("font-weight: 500; font-size: 11px;")
         self.combo_pour_category = QComboBox()
-        self.combo_pour_category.setMinimumWidth(120)
+        self.combo_pour_category.setMinimumWidth(110)
         self.combo_pour_category.setToolTip(tr(
             "Active surface category to pour (auto-merges touching polygons of same category).\nUse Tab while drawing to cycle categories.",
             "Aktywna kategoria nawierzchni (automatycznie scala stykające się poligony tej samej kategorii).\nKlawisz Tab w trakcie rysowania przełącza kategorie."
@@ -178,6 +189,8 @@ class CurveSettingsWidget(QWidget):
         ))
         self.btn_pour_layers.clicked.connect(lambda: self.pourLayersDialogRequested.emit())
 
+        pour_layout.addWidget(lbl_field)
+        pour_layout.addWidget(self.combo_pour_field)
         pour_layout.addWidget(lbl_pour)
         pour_layout.addWidget(self.combo_pour_category)
         pour_layout.addWidget(self.btn_pour_layers)
@@ -352,6 +365,33 @@ class CurveSettingsWidget(QWidget):
         if idx >= 0:
             self.combo_mode.setCurrentIndex(idx)
 
+    def _on_pour_field_changed(self, index: int):
+        val = self.combo_pour_field.itemData(index)
+        field_name = str(val) if val else ""
+        self.pourFieldChanged.emit(field_name)
+
+    def set_pour_fields(self, field_names: List[str], active_field: Optional[str] = None):
+        """Ustawia listę dostępnych atrybutów w warstwie oraz zaznacza pole aktywne."""
+        self.combo_pour_field.blockSignals(True)
+        self.combo_pour_field.clear()
+        self.combo_pour_field.addItem(tr("[None]", "[Brak]"), "")
+        for fn in field_names:
+            self.combo_pour_field.addItem(fn, fn)
+
+        if active_field:
+            idx = self.combo_pour_field.findData(active_field)
+            if idx >= 0:
+                self.combo_pour_field.setCurrentIndex(idx)
+            else:
+                self.combo_pour_field.setCurrentIndex(0)
+        else:
+            self.combo_pour_field.setCurrentIndex(0)
+        self.combo_pour_field.blockSignals(False)
+
+    def current_pour_field(self) -> Optional[str]:
+        data = self.combo_pour_field.currentData()
+        return str(data) if data else None
+
     def _on_pour_category_changed(self, text: str):
         self.pourCategoryChanged.emit(text)
 
@@ -359,11 +399,25 @@ class CurveSettingsWidget(QWidget):
         self,
         categories: List[str],
         active: Optional[str] = None,
-        category_styles: Optional[Dict[str, Any]] = None
+        category_styles: Optional[Dict[str, Any]] = None,
+        has_field: bool = True
     ):
-        """Ustawia listę dostępnych kategorii w liście rozwijanej wraz z próbkami stylizacji z warstwy."""
+        """
+        Ustawia listę dostępnych kategorii w liście rozwijanej:
+        - has_field=False: blokuje listę i wyświetla '[Brak kategorii]'.
+        - has_field=True i brak kategorii: wyświetla wyłącznie '[➕ Nowa kategoria...]'.
+        - has_field=True i są kategorie: wyświetla kategorie + '[➕ Nowa kategoria...]'.
+        """
         self.combo_pour_category.blockSignals(True)
         self.combo_pour_category.clear()
+
+        if not has_field:
+            self.combo_pour_category.addItem(tr("[No Category]", "[Brak kategorii]"))
+            self.combo_pour_category.setEnabled(False)
+            self.combo_pour_category.blockSignals(False)
+            return
+
+        self.combo_pour_category.setEnabled(True)
         for cat in categories:
             icon = None
             if category_styles:
@@ -407,7 +461,7 @@ class CurveSettingsWidget(QWidget):
     def cycle_pour_category(self, step: int = 1) -> str:
         """Przeskakuje do kolejnej kategorii (klawisz Tab)."""
         count = self.combo_pour_category.count()
-        if count <= 0:
+        if count <= 0 or not self.combo_pour_category.isEnabled():
             return ""
         curr = self.combo_pour_category.currentIndex()
         next_idx = (curr + step) % count

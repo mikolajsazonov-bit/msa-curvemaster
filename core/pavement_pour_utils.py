@@ -28,29 +28,17 @@ from .layer_modifier import LayerModifier
 from .offset_utils import extract_rings_as_line
 
 
-# Standardowe nazwy kolumn kategorii w projektach CAD/GIS
-CATEGORY_FIELD_CANDIDATES = (
-    'kategoria',
-    'category',
-    'typ',
-    'type',
-    'nawierzchnia',
-    'surface',
-    'material',
-    'rodzaj'
-)
-
-
 def find_category_field_name(layer: Optional[QgsVectorLayer]) -> Optional[str]:
     """
-    Wyszukuje najbardziej prawdopodobną nazwę kolumny dla kategorii nawierzchni.
-    Najpierw sprawdza atrybut klasyfikacji ze stylizacji warstwy (jeśli warstwa jest skategoryzowana).
-    Następnie sprawdza standardowe nazwy kandydatów, a na końcu pierwsze pole tekstowe.
+    Wyszukuje nazwę kolumny dla kategorii nawierzchni wyłącznie na podstawie stylizacji warstwy.
+    BEZ ZGADYWANIA:
+    Sprawdza, czy warstwa posiada symbolikę opartą na wartościach unikalnych (QgsCategorizedSymbolRenderer).
+    Jeśli tak, zwraca atrybut klasyfikacji (classAttribute).
+    W przeciwnym razie (brak stylizacji lub inna niż unikalne wartości) zwraca None.
     """
     if not layer or not layer.isValid():
         return None
 
-    # 1. Sprawdzenie atrybutu kategoryzacji w rendererze warstwy
     try:
         renderer = layer.renderer()
         if isinstance(renderer, QgsCategorizedSymbolRenderer):
@@ -58,24 +46,7 @@ def find_category_field_name(layer: Optional[QgsVectorLayer]) -> Optional[str]:
             if class_attr and layer.fields().indexOf(class_attr) >= 0:
                 return class_attr
     except Exception as err:
-        QgsMessageLog.logMessage(f"Odczyt atrybutu z renderera: {err}", "CurveMaster", Qgis.Info)
-
-    fields = layer.fields()
-    field_names = [f.name() for f in fields]
-    field_names_lower = [name.lower() for name in field_names]
-
-    # 2. Sprawdzenie znanych nazw kandydatów
-    for candidate in CATEGORY_FIELD_CANDIDATES:
-        if candidate in field_names_lower:
-            idx = field_names_lower.index(candidate)
-            return field_names[idx]
-
-    # 3. Fallback: pierwsze pole tekstowe
-    for field in fields:
-        if field.typeName().lower() in ('string', 'text', 'varchar', 'character'):
-            # Pomijamy ID/klucze
-            if field.name().lower() not in ('id', 'uuid', 'guid', 'fid', 'ogc_fid'):
-                return field.name()
+        QgsMessageLog.logMessage(f"Odczyt atrybutu kategoryzacji z renderera: {err}", "CurveMaster", Qgis.Info)
 
     return None
 
@@ -501,13 +472,13 @@ def merge_polygon_with_category(
         if not feat_geom.intersects(new_geom):
             continue
 
-        # Sprawdzamy zgodność kategorii
-        if field_idx >= 0:
+        # Sprawdzamy zgodność kategorii (Auto-Merge tylko przy zdefiniowanym polu i wartości kategorii)
+        if field_idx >= 0 and category_str:
             feat_val = str(feat.attribute(field_idx)).strip().lower() if feat.attribute(field_idx) is not None else ""
             if feat_val != category_str:
                 continue
-        elif category_str:
-            # Jeśli brak pola kategorii, a podano wartość, traktujemy jako brak dopasowania
+        else:
+            # Brak wybranego atrybutu różnicującego lub pusta kategoria -> brak Auto-Merge
             continue
 
         matching_features.append(feat)

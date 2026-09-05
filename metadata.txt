@@ -6,7 +6,7 @@ description=CAD tool for interactive curve adjustment, fillet rounding, Trim/Ext
 about=Enables interactive bending of segments into arcs, corner and two-line fillet rounding with auto-trim, AutoCAD-style Trim/Extend, CAD parallel offset, polyline/polygon drawing with Polar Tracking, and CAD Smart Pour for interactive pavement surface filling between curbs with dynamic radius and auto-merge. Includes on-canvas CAD HUD overlays with keyboard entry, multi-layer boundary detection, and full Undo/Redo support.
 description[pl]=Narzędzie CAD do interaktywnej korekty łuków, zaokrąglania narożników i dwóch linii (fillet), trim/extend, offsetu, rysowania z Polar Trackingiem oraz wylewania nawierzchni (Smart Pour)
 about[pl]=Wtyczka umożliwia precyzyjne wyginanie prostych odcinków w łuki, zaokrąglanie wierzchołków i narożników dwóch linii (fillet) z automatycznym docięciem, przycinanie i wydłużanie obiektów (AutoCAD-like Trim/Extend) względem innych warstw, prosty offset równoległy CAD, rysowanie ze śledzeniem biegunowym (Polar Tracking) oraz interaktywne wylewanie nawierzchni (CAD Smart Pour) między krawężnikami z dynamicznym promieniem i automatycznym scalaniem (Auto-Merge). Posiada pływające okienka CAD HUD z wpisywaniem wartości z klawiatury oraz pełną obsługę Undo/Redo.
-version=1.4.0
+version=1.4.1
 author=Mikołaj Sazonov
 email=curvemaster@sazonov.work
 tracker=https://github.com/mikolajsazonov-bit/msa-curvemaster/issues
@@ -17,7 +17,12 @@ icon=icon.png
 experimental=False
 deprecated=False
 tags=curves, arc, fillet, trim, extend, offset, parallel, polar, tracking, angle, cad, geometry, polyline, polygon, digitizing, vector, smart pour, pavement, boundary, hatch
-changelog=1.4.0:
+changelog=1.4.1:
+    - Smart Pour: Selectable category attribute field on toolbar and dropdown menu
+    - Smart Pour: Strict attribute detection based on categorized styling (no guessing if unstyled)
+    - Smart Pour: Removed artificial category fallback ("Asfalt"); allows defining a new category when field is selected, or none when unassigned
+    - Smart Pour: Prevent unintended auto-merging and column creation when no category field is selected
+1.4.0:
     - Added CAD Smart Pour (Zalej nawierzchnię) tool for interactive pavement surface filling between curbs
     - Dynamic cutoff radius with on-canvas CAD HUD and keyboard entry
     - Auto-merge support for contiguous polygons belonging to the same surface category
@@ -26,3 +31,4 @@ changelog=1.4.0:
     - Multi-layer boundary selection dialog with project persistence
     - Fix: Prevent C++ SIGSEGV during symbol preview generation using pure QPainter swatches
     - Fix: Fixed dangling QgsMapMouseEvent lifetime in Trim/Extend tool keyboard handling
+

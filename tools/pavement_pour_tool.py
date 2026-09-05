@@ -124,6 +124,8 @@ class PavementPourTool(BaseCurveTool):
         self._load_boundary_settings()
 
         # Synchronizacja ze zmianą w pasku ustawień
+        self.selected_category_field: Optional[str] = None
+        self.settings_widget.pourFieldChanged.connect(self._on_settings_field_changed)
         self.settings_widget.pourCategoryChanged.connect(self._on_settings_category_changed)
         self.settings_widget.pourLayersDialogRequested.connect(self.open_boundary_layers_dialog)
 
@@ -243,6 +245,16 @@ class PavementPourTool(BaseCurveTool):
 
         act_inc_active.toggled.connect(on_toggle_active)
 
+        menu.addSeparator()
+
+        lbl_field_hdr = QLabel(tr("  Differentiating field (Category):", "  Pole różnicujące (kategoria):"))
+        lbl_field_hdr.setStyleSheet("font-weight: bold; color: #6c757d; font-size: 11px; padding: 4px 6px;")
+        act_fhdr = QWidgetAction(menu)
+        act_fhdr.setDefaultWidget(lbl_field_hdr)
+        menu.addAction(act_fhdr)
+
+        field_menu = menu.addMenu(tr("Select category field...", "Wybierz pole kategorii..."))
+
         def on_about_to_show():
             act_custom.setChecked(self.boundary_scope == PourBoundaryScope.CUSTOM_LAYERS)
             act_visible_lines.setChecked(self.boundary_scope == PourBoundaryScope.VISIBLE_LINES)
@@ -250,8 +262,44 @@ class PavementPourTool(BaseCurveTool):
             count = len(self.selected_boundary_layer_ids)
             act_custom.setText(tr(f"Only selected layers ({count})", f"Tylko wybrane warstwy ({count})"))
 
+            # Aktualizacja menu wyboru pola kategorii
+            field_menu.clear()
+            layer = self.active_editable_polygon_layer()
+            if layer:
+                grp_fields = QActionGroup(field_menu)
+                grp_fields.setExclusive(True)
+
+                act_none = field_menu.addAction(tr("[None] No category field", "[Brak] Bez pola kategorii"))
+                act_none.setCheckable(True)
+                act_none.setChecked(self.selected_category_field is None)
+                grp_fields.addAction(act_none)
+                act_none.triggered.connect(lambda: self._set_field_from_menu(None))
+
+                for f in layer.fields():
+                    fname = f.name()
+                    act_f = field_menu.addAction(fname)
+                    act_f.setCheckable(True)
+                    act_f.setChecked(self.selected_category_field == fname)
+                    grp_fields.addAction(act_f)
+                    act_f.triggered.connect(lambda checked, fn=fname: self._set_field_from_menu(fn))
+            else:
+                act_no = field_menu.addAction(tr("No editable polygon layer", "Brak edytowalnej warstwy"))
+                act_no.setEnabled(False)
+
         menu.aboutToShow.connect(on_about_to_show)
         return menu
+
+    def _set_field_from_menu(self, field_name: Optional[str]):
+        """Obsługuje wybór pola kategorii z menu rozwijanego."""
+        self.selected_category_field = field_name
+        self.settings_widget.combo_pour_field.blockSignals(True)
+        idx = self.settings_widget.combo_pour_field.findData(field_name or "")
+        if idx >= 0:
+            self.settings_widget.combo_pour_field.setCurrentIndex(idx)
+        self.settings_widget.combo_pour_field.blockSignals(False)
+        layer = self.active_editable_polygon_layer()
+        if layer:
+            self._update_category_state(layer)
 
     def activate(self):
         super().activate()
@@ -302,10 +350,12 @@ class PavementPourTool(BaseCurveTool):
                     tr("Please enable editing on a polygon layer to pour surfaces.",
                        "Włącz tryb edycji na warstwie poligonowej, aby wylewać nawierzchnie.")
                 )
-            self.active_categories = [tr("Asphalt", "Asfalt")]
+            self.active_categories = []
             self.category_styles = {}
-            self.settings_widget.set_pour_categories(self.active_categories, self.last_used_category)
-            self.overlay.set_category_name(self.active_categories[0], None)
+            self.selected_category_field = None
+            self.settings_widget.set_pour_fields([], None)
+            self.settings_widget.set_pour_categories([], None, None, has_field=False)
+            self.overlay.set_category_name(tr("[No Category]", "[Brak kategorii]"), None, has_field=False)
             return
 
         # Podpięcie pod zmianę stylizacji aktywnej warstwy
@@ -321,39 +371,83 @@ class PavementPourTool(BaseCurveTool):
             except Exception as err:
                 QgsMessageLog.logMessage(f"Connect layer styleChanged: {err}", "CurveMaster", Qgis.Info)
 
-        field_name = find_category_field_name(layer)
-        cats = get_layer_unique_categories(layer, field_name)
-        if not cats:
-            cats = [tr("Asphalt", "Asfalt")]
+        layer_field_names = [f.name() for f in layer.fields()]
 
+        # Jeśli użytkownik jeszcze nie wybrał pola lub pole nie istnieje w bieżącej warstwie:
+        # Sprawdzamy czy warstwa posiada atrybut w stylizacji skategoryzowanej (bez zgadywania!)
+        if not self.selected_category_field or self.selected_category_field not in layer_field_names:
+            self.selected_category_field = find_category_field_name(layer)
+
+        # Ustawiamy dostępne pola na pasku narzędzi
+        self.settings_widget.set_pour_fields(layer_field_names, self.selected_category_field)
+        self._update_category_state(layer)
+
+    def _on_settings_field_changed(self, field_name: str):
+        """Obsługuje wybór atrybutu różnicującego z paska narzędzi."""
+        clean = field_name.strip() if field_name else None
+        self.selected_category_field = clean if clean else None
+        layer = self.active_editable_polygon_layer()
+        if layer:
+            self._update_category_state(layer)
+
+    def _update_category_state(self, layer: QgsVectorLayer):
+        """Aktualizuje listę kategorii i stylizację dla wybranego pola."""
+        field_name = self.selected_category_field
+        has_field = bool(field_name and layer.fields().indexOf(field_name) >= 0)
+
+        if not has_field:
+            self.active_categories = []
+            self.category_styles = {}
+            self.current_category_idx = 0
+            self.settings_widget.set_pour_categories([], None, None, has_field=False)
+            self.overlay.set_category_name(tr("[No Category]", "[Brak kategorii]"), None, has_field=False)
+            return
+
+        cats = get_layer_unique_categories(layer, field_name)
         self.active_categories = cats
         self.category_styles = get_layer_category_styles(layer, field_name)
 
-        # Domyślny wybór: ostatnio użyty lub pierwszy alfabetycznie
-        chosen_cat = self.last_used_category if (self.last_used_category and self.last_used_category in cats) else cats[0]
-        self.last_used_category = chosen_cat
-        self.current_category_idx = self.active_categories.index(chosen_cat) if chosen_cat in self.active_categories else 0
-
-        chosen_style = find_category_style(self.category_styles, chosen_cat)
-        self.settings_widget.set_pour_categories(self.active_categories, chosen_cat, self.category_styles)
-        self.overlay.set_category_name(chosen_cat, chosen_style)
+        if not cats:
+            # Pole jest wybrane, ale nie ma jeszcze żadnych zdefiniowanych rodzajów
+            self.current_category_idx = 0
+            cat_display = tr("[+ New Category...]", "[➕ Nowa kategoria...]")
+            self.settings_widget.set_pour_categories([], cat_display, self.category_styles, has_field=True)
+            self.overlay.set_category_name(cat_display, None, has_field=True)
+        else:
+            chosen_cat = self.last_used_category if (self.last_used_category and self.last_used_category in cats) else cats[0]
+            self.last_used_category = chosen_cat
+            self.current_category_idx = self.active_categories.index(chosen_cat)
+            chosen_style = find_category_style(self.category_styles, chosen_cat)
+            self.settings_widget.set_pour_categories(self.active_categories, chosen_cat, self.category_styles, has_field=True)
+            self.overlay.set_category_name(chosen_cat, chosen_style, has_field=True)
 
     def _get_active_category_display(self) -> str:
         """Zwraca nazwę aktualnie wybranej kategorii."""
+        if not self.selected_category_field:
+            return tr("[No Category]", "[Brak kategorii]")
         total = len(self.active_categories)
+        if total == 0:
+            return tr("[+ New Category...]", "[➕ Nowa kategoria...]")
         if self.current_category_idx < total:
             return self.active_categories[self.current_category_idx]
         return tr("[+ New Category...]", "[➕ Nowa kategoria...]")
 
     def _cycle_category(self, step: int = 1):
         """Przełącza kategorię na kolejną (klawisz Tab)."""
+        if not self.selected_category_field:
+            return
+
+        total_cats = len(self.active_categories)
+        if total_cats == 0:
+            return
+
         # Lista kategorii + 1 pozycja na "Nowa kategoria..."
-        total_items = len(self.active_categories) + 1
+        total_items = total_cats + 1
         self.current_category_idx = (self.current_category_idx + step) % total_items
 
         cat_display = self._get_active_category_display()
         style = find_category_style(self.category_styles, cat_display)
-        self.overlay.set_category_name(cat_display, style)
+        self.overlay.set_category_name(cat_display, style, has_field=True)
         self.settings_widget.set_current_pour_category(cat_display, style)
 
     def _on_settings_category_changed(self, cat_text: str):
@@ -367,7 +461,8 @@ class PavementPourTool(BaseCurveTool):
 
         cat_display = self._get_active_category_display()
         style = find_category_style(self.category_styles, cat_display)
-        self.overlay.set_category_name(cat_display, style)
+        has_field = bool(self.selected_category_field)
+        self.overlay.set_category_name(cat_display, style, has_field=has_field)
 
     def _collect_boundary_geometries(self, layer: QgsVectorLayer, center_pt: QgsPointXY, radius: float) -> List[QgsGeometry]:
         """
@@ -492,7 +587,8 @@ class PavementPourTool(BaseCurveTool):
                 self.overlay.set_last_radius(self.last_used_radius)
                 cat_display = self._get_active_category_display()
                 style = find_category_style(self.category_styles, cat_display)
-                self.overlay.update_values(self.current_radius, cat_display, e.pos(), style)
+                has_field = bool(self.selected_category_field)
+                self.overlay.update_values(self.current_radius, cat_display, e.pos(), style, has_field=has_field)
 
             elif self.state == self.STATE_POURING:
                 # Krok 2: Kliknięcie potwierdza promień i wylewa poligon
@@ -520,7 +616,8 @@ class PavementPourTool(BaseCurveTool):
             self._update_preview(self.current_radius, curr_canvas_pt)
             cat_display = self._get_active_category_display()
             style = find_category_style(self.category_styles, cat_display)
-            self.overlay.update_values(self.current_radius, cat_display, e.pos(), style)
+            has_field = bool(self.selected_category_field)
+            self.overlay.update_values(self.current_radius, cat_display, e.pos(), style, has_field=has_field)
 
     def _update_preview(self, radius: float, curr_canvas_pt: Optional[QgsPointXY] = None):
         """Oblicza i rysuje podgląd poligonu oraz linię promienia."""
@@ -596,50 +693,45 @@ class PavementPourTool(BaseCurveTool):
             self._cancel_operation()
             return
 
-        # Obsługa kategorii: jeśli wybrano [Nowa kategoria...], pytamy użytkownika o nazwę
+        # Obsługa kategorii
         category_to_apply = ""
-        total_cats = len(self.active_categories)
-        if self.current_category_idx < total_cats:
-            category_to_apply = self.active_categories[self.current_category_idx]
-        else:
-            # Okno dialogowe nowej kategorii
-            parent_widget = self.iface.mainWindow() if self.iface else self.canvas().window()
-            new_cat_name, ok = QInputDialog.getText(
-                parent_widget,
-                tr("New Surface Category", "Nowa kategoria nawierzchni"),
-                tr("Enter category name for poured surface (e.g. grass, bike path):",
-                   "Wpisz nazwę nowej kategorii nawierzchni (np. trawa, ddr):"),
-                QLineEdit.Normal,
-                ""
-            )
-            if not ok or not new_cat_name.strip():
-                # Użytkownik anulował wprowadzanie
-                self._cancel_operation()
-                return
+        field_name = self.selected_category_field
 
-            category_to_apply = new_cat_name.strip()
-            # Dodanie do listy i zapamiętanie
-            if category_to_apply not in self.active_categories:
-                self.active_categories.append(category_to_apply)
-                self.active_categories.sort(key=lambda x: x.lower())
-                self.settings_widget.set_pour_categories(self.active_categories, category_to_apply)
+        if field_name:
+            total_cats = len(self.active_categories)
+            if total_cats > 0 and self.current_category_idx < total_cats:
+                category_to_apply = self.active_categories[self.current_category_idx]
+            else:
+                # Okno dialogowe nowej kategorii
+                parent_widget = self.iface.mainWindow() if self.iface else self.canvas().window()
+                new_cat_name, ok = QInputDialog.getText(
+                    parent_widget,
+                    tr("New Surface Category", "Nowa kategoria nawierzchni"),
+                    tr("Enter category name for poured surface:",
+                       "Wpisz nazwę nowej kategorii nawierzchni:"),
+                    QLineEdit.Normal,
+                    ""
+                )
+                if not ok or not new_cat_name.strip():
+                    # Użytkownik anulował wprowadzanie
+                    self._cancel_operation()
+                    return
+
+                category_to_apply = new_cat_name.strip()
+                if category_to_apply not in self.active_categories:
+                    self.active_categories.append(category_to_apply)
+                    self.active_categories.sort(key=lambda x: x.lower())
+                    self.current_category_idx = self.active_categories.index(category_to_apply)
+                    self.settings_widget.set_pour_categories(
+                        self.active_categories, category_to_apply, self.category_styles, has_field=True
+                    )
 
         # Zapamiętujemy jako ostatnio użytą
-        self.last_used_category = category_to_apply
+        if category_to_apply:
+            self.last_used_category = category_to_apply
+            PavementPourTool.last_used_category = category_to_apply
         self.last_used_radius = self.current_radius
-        PavementPourTool.last_used_category = category_to_apply
         PavementPourTool.last_used_radius = self.current_radius
-
-        # Zapewnienie istnienia kolumny kategorii w warstwie
-        field_name = find_category_field_name(layer)
-        if not field_name:
-            # Automatycznie dodajemy pole 'kategoria' do warstwy
-            try:
-                layer.dataProvider().addAttributes([QgsField("kategoria", QVariant.String)])
-                layer.updateFields()
-                field_name = "kategoria"
-            except Exception as err:
-                QgsMessageLog.logMessage(f"Błąd dodawania pola kategoria: {err}", "CurveMaster", Qgis.Warning)
 
         # Wykonanie Auto-Merge / wstawienia do warstwy
         success = merge_polygon_with_category(

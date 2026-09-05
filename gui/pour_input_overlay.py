@@ -146,11 +146,26 @@ class PourInputOverlay(QFrame):
             self.lbl_hint.setText("(Enter = zatwierdź)")
             self.edit_radius.setPlaceholderText("np. 50.0")
 
-    def set_category_name(self, name: str, style: Optional[object] = None):
+    def set_category_name(self, name: str, style: Optional[object] = None, has_field: bool = True):
         """Aktualizuje etykietę i kolorystykę aktywnej kategorii ze stylizacji warstwy."""
-        clean_name = name.strip() if name else "Brak"
+        clean_name = name.strip() if name else tr("[No Category]", "[Brak kategorii]")
         self.lbl_cat_val.setText(clean_name)
 
+        if not has_field or clean_name.lower() in ("brak", "[brak]", "[brak kategorii]", "[bez kategorii]", "[no category]"):
+            self.lbl_cat_swatch.hide()
+            self.lbl_cat_val.setStyleSheet("""
+                background-color: #495057;
+                color: #ced4da;
+                font-weight: normal;
+                font-size: 11px;
+                padding: 2px 8px;
+                border: 1px dashed #6c757d;
+                border-radius: 4px;
+            """)
+            self.lbl_tab_hint.hide()
+            return
+
+        self.lbl_tab_hint.show()
         if style is not None and hasattr(style, 'fill_color'):
             # Stylizacja bezpośrednio z warstwy QGIS
             fill_hex = style.fill_color.name()
@@ -200,10 +215,10 @@ class PourInputOverlay(QFrame):
 
         self.adjustSize()
 
-    def update_values(self, radius: float, category_name: str, pos: QPoint, style: Optional[object] = None):
+    def update_values(self, radius: float, category_name: str, pos: QPoint, style: Optional[object] = None, has_field: bool = True):
         """Aktualizuje wyświetlany promień w czasie przeciągania oraz pozycję widgetu."""
         self._current_radius = radius
-        self.set_category_name(category_name, style)
+        self.set_category_name(category_name, style, has_field=has_field)
         if not self.edit_radius.hasFocus():
             self.edit_radius.setText(f"{radius:.2f}")
 
