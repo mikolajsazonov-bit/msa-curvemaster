@@ -40,20 +40,22 @@ class PourInputOverlay(QFrame):
         super().__init__(parent)
         self.last_radius: Optional[float] = None
         self._current_radius: float = 0.0
+        self.is_erase_mode: bool = False
         self._init_ui()
 
-    def _init_ui(self):
-        self.setStyleSheet("""
-            PourInputOverlay {
+    def _update_frame_style(self):
+        border_color = "#dc3545" if self.is_erase_mode else "#0d6efd"
+        self.setStyleSheet(f"""
+            PourInputOverlay {{
                 background-color: rgba(33, 37, 41, 240);
-                border: 1.5px solid #0d6efd;
+                border: 1.5px solid {border_color};
                 border-radius: 6px;
-            }
-            QLabel {
+            }}
+            QLabel {{
                 color: #f8f9fa;
                 font-size: 11px;
-            }
-            QLineEdit {
+            }}
+            QLineEdit {{
                 background-color: #ffffff;
                 color: #000000;
                 border: 1px solid #ced4da;
@@ -62,11 +64,14 @@ class PourInputOverlay(QFrame):
                 font-weight: bold;
                 font-size: 12px;
                 min-width: 65px;
-            }
-            QLineEdit:focus {
+            }}
+            QLineEdit:focus {{
                 border: 1.5px solid #ffc107;
-            }
+            }}
         """)
+
+    def _init_ui(self):
+        self._update_frame_style()
 
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(8, 6, 8, 6)
@@ -77,9 +82,9 @@ class PourInputOverlay(QFrame):
         row_radius.setContentsMargins(0, 0, 0, 0)
         row_radius.setSpacing(6)
 
-        lbl_radius = QLabel(tr("Zasięg:", "Zasięg:"))
-        lbl_radius.setStyleSheet("font-weight: bold; color: #ffffff;")
-        row_radius.addWidget(lbl_radius)
+        self.lbl_radius = QLabel(tr("Zasięg:", "Zasięg:"))
+        self.lbl_radius.setStyleSheet("font-weight: bold; color: #ffffff;")
+        row_radius.addWidget(self.lbl_radius)
 
         self.edit_radius = QLineEdit()
         self.edit_radius.setPlaceholderText("np. 50.0")
@@ -104,9 +109,9 @@ class PourInputOverlay(QFrame):
         row_cat.setContentsMargins(0, 0, 0, 0)
         row_cat.setSpacing(6)
 
-        lbl_cat_title = QLabel(tr("Kategoria:", "Kategoria:"))
-        lbl_cat_title.setStyleSheet("font-weight: bold; color: #ffffff;")
-        row_cat.addWidget(lbl_cat_title)
+        self.lbl_cat_title = QLabel(tr("Kategoria:", "Kategoria:"))
+        self.lbl_cat_title.setStyleSheet("font-weight: bold; color: #ffffff;")
+        row_cat.addWidget(self.lbl_cat_title)
 
         self.lbl_cat_swatch = QLabel()
         self.lbl_cat_swatch.setFixedSize(16, 16)
@@ -134,6 +139,32 @@ class PourInputOverlay(QFrame):
 
         self.adjustSize()
         self.hide()
+
+    def set_erase_mode(self, enabled: bool = True):
+        """Przełącza styl widgetu HUD w tryb wycinania/gumki CAD."""
+        self.is_erase_mode = enabled
+        self._update_frame_style()
+        if enabled:
+            self.lbl_radius.setText(tr("Promień wycięcia:", "Promień wycięcia:"))
+            self.lbl_cat_title.setText(tr("Tryb:", "Tryb:"))
+            self.lbl_cat_swatch.hide()
+            self.lbl_cat_val.setText(tr("[Gumka CAD / Usuń]", "[Gumka CAD / Usuń]"))
+            self.lbl_cat_val.setStyleSheet("""
+                background-color: #dc3545;
+                color: #ffffff;
+                font-weight: bold;
+                font-size: 11px;
+                padding: 2px 8px;
+                border: 1.5px solid #bd2130;
+                border-radius: 4px;
+            """)
+            self.lbl_tab_hint.hide()
+            self.lbl_hint.setText(tr("(Enter = wytnij)", "(Enter = wytnij)"))
+        else:
+            self.lbl_radius.setText(tr("Zasięg:", "Zasięg:"))
+            self.lbl_cat_title.setText(tr("Kategoria:", "Kategoria:"))
+            self.lbl_hint.setText(tr("(Enter = zatwierdź)", "(Enter = zatwierdź)"))
+        self.adjustSize()
 
     def set_last_radius(self, radius: Optional[float]):
         """Ustawia zapamiętany ostatni promień."""
@@ -215,10 +246,25 @@ class PourInputOverlay(QFrame):
 
         self.adjustSize()
 
-    def update_values(self, radius: float, category_name: str, pos: QPoint, style: Optional[object] = None, has_field: bool = True):
+    def update_values(
+        self,
+        radius: float,
+        category_name: str,
+        pos: QPoint,
+        style: Optional[object] = None,
+        has_field: bool = True,
+        is_erase: bool = False
+    ):
         """Aktualizuje wyświetlany promień w czasie przeciągania oraz pozycję widgetu."""
         self._current_radius = radius
-        self.set_category_name(category_name, style, has_field=has_field)
+        if is_erase != self.is_erase_mode:
+            self.set_erase_mode(is_erase)
+
+        if is_erase:
+            self.lbl_hint.setText(f"(Enter = <{radius:.2f}> m)")
+        else:
+            self.set_category_name(category_name, style, has_field=has_field)
+
         if not self.edit_radius.hasFocus():
             self.edit_radius.setText(f"{radius:.2f}")
 

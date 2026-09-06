@@ -546,3 +546,123 @@ def merge_polygon_with_category(
     else:
         layer.destroyEditCommand()
         return False
+
+
+def find_polygon_feature_at_point(
+    layer: Optional[QgsVectorLayer],
+    point: QgsPointXY,
+    tolerance: float = 0.05
+) -> Optional[QgsFeature]:
+    """
+    Wyszukuje obiekt poligonowy w edytowalnej warstwie zawierający zadany punkt point.
+    W przypadku kliknięcia w pobliżu krawędzi uwzględnia bufor o zadanym tolerance.
+    Jeśli punkt leży wewnątrz kilku obiektów, wybiera obiekt o najmniejszej powierzchni.
+    """
+    if not layer or not layer.isValid() or not point:
+        return None
+
+    pt_geom = QgsGeometry.fromPointXY(point)
+    search_box = pt_geom.buffer(max(tolerance, 0.01), 4).boundingBox()
+    req = QgsFeatureRequest().setFilterRect(search_box)
+
+    candidates: List[Tuple[float, QgsFeature]] = []
+
+    for feat in layer.getFeatures(req):
+        fg = feat.geometry()
+        if not fg or fg.isEmpty():
+            continue
+
+        if fg.contains(pt_geom):
+            candidates.append((fg.area(), feat))
+        elif fg.distance(pt_geom) <= tolerance:
+            candidates.append((fg.area(), feat))
+
+    if not candidates:
+        return None
+
+    # Sortowanie po powierzchni rosnąco - preferujemy mniejszy/bardziej szczegółowy poligon
+    candidates.sort(key=lambda item: item[0])
+    return candidates[0][1]
+
+
+def erase_polygon_with_radius(
+    layer: QgsVectorLayer,
+    feature_id: int,
+    center_pt: QgsPointXY,
+    radius: float,
+    command_name: str = "MSA: Wytnij fragment nawierzchni"
+) -> bool:
+    """
+    Wycina kołowy fragment o zadanym promieniu radius wokół center_pt ze wskazanego obiektu poligonowego.
+    - Jeśli obiekt po wycięciu stanie się pusty, usuwa go z warstwy.
+    - Jeśli obiekt po wycięciu zachowuje geometrię, aktualizuje ją.
+    - Jeśli warstwa jest typu SinglePart, a wycięcie podzieliło poligon na rozłączne części,
+      tworzy dodatkowe obiekty z bezpiecznie wyzerowanym kluczem głównym (fid) wg reguły GeoPackage.
+    Całość zamyka w pojedynczej transakcji Undo/Redo.
+    """
+    if not layer or not layer.isEditable() or radius <= 0 or not center_pt:
+        return False
+
+    feat = layer.getFeature(feature_id)
+    if not feat.isValid():
+        return False
+
+    orig_geom = feat.geometry()
+    if not orig_geom or orig_geom.isEmpty():
+        return False
+
+    pt_geom = QgsGeometry.fromPointXY(center_pt)
+    disk = pt_geom.buffer(radius, 36)
+    if not disk or disk.isEmpty():
+        return False
+
+    if not orig_geom.intersects(disk):
+        return False
+
+    # Obliczenie różnicy geometrycznej
+    diff_geom = orig_geom.difference(disk)
+
+    # 1. Przypadek całkowitego usunięcia (poligon w całości mieścił się w promieniu wycięcia)
+    if diff_geom is None or diff_geom.isNull() or diff_geom.isEmpty() or diff_geom.area() < 1e-6:
+        layer.beginEditCommand(command_name)
+        deleted = layer.deleteFeature(feature_id)
+        if deleted:
+            layer.endEditCommand()
+            layer.triggerRepaint()
+            return True
+        else:
+            layer.destroyEditCommand()
+            return False
+
+    diff_geom = diff_geom.makeValid()
+
+    # 2. Dopasowanie typu WKB do specyfikacji warstwy
+    adapted_list = LayerModifier.adapt_geometry_to_layer(layer, diff_geom)
+    if not adapted_list:
+        return False
+
+    layer.beginEditCommand(command_name)
+    try:
+        # Aktualizacja pierwszego fragmentu w istniejącym obiekcie
+        success = layer.changeGeometry(feature_id, adapted_list[0])
+        if not success:
+            layer.destroyEditCommand()
+            return False
+
+        # Jeśli warstwa jest SinglePart i poligon rozpadł się na więcej niż 1 część:
+        if len(adapted_list) > 1:
+            for extra_geom in adapted_list[1:]:
+                new_feat = QgsFeature(layer.fields())
+                new_attrs = LayerModifier.copy_attributes_for_new_feature(layer, feat)
+                new_feat.setAttributes(new_attrs)
+                new_feat.setGeometry(extra_geom)
+                layer.addFeature(new_feat)
+
+        layer.endEditCommand()
+        layer.triggerRepaint()
+        return True
+    except Exception as err:
+        QgsMessageLog.logMessage(f"Błąd wycinania fragmentu: {err}", "CurveMaster", Qgis.Warning)
+        layer.destroyEditCommand()
+        return False
+

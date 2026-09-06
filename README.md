@@ -95,8 +95,8 @@
 
 ---
 
-### 7. Zalej nawierzchnię (*CAD Smart Pour*) [v1.4.1]
-* **Jak używać:**
+### 7. Zalej / Wytnij nawierzchnię (*CAD Smart Pour & Erase*) [NOWOŚĆ v1.5.0]
+* **Jak używać — Tryb Wylewania (Zwykłe kliknięcie):**
   1. Włącz tryb edycji dla warstwy poligonowej (np. `Nawierzchnie`, `Chodniki`, `Jezdnie`).
   2. Aktywuj narzędzie **Zalej nawierzchnię** na pasku narzędzi.
   3. **Wybór atrybutu kategoryzacji (Pole / Field):**
@@ -115,9 +115,16 @@
      - Kliknij lewym przyciskiem myszy pod zadanym promieniem lub naciśnij `Enter` (możesz też wpisać promień z klawiatury, np. `50.0`).
      - Jeśli wybrano `[➕ Nowa kategoria...]`, w okienku wpisz nazwę nowej nawierzchni.
      - **Automatyczne scalanie (Auto-Merge):** Jeśli nowo wylana nawierzchnia styka się z istniejącym poligonem tej samej kategorii, zostaje z nim bezszwowo połączona w jeden, spójny obiekt wielokątny.
-  8. **Selektywne warstwy krawędzi:**
-     - Kliknij przycisk `[Krawędzie...]`, aby wskazać wyłącznie warstwy krawężników i obrzeży, eliminując kolizje z warstwami tła (działki, sieci uzbrojenia terenu).
-  9. *Prawy przycisk myszy lub klawisz `Escape` anuluje operację.*
+
+* **Jak używać — Tryb Gumki CAD / Wycinania fragmentu (`Shift + Klik`):**
+  1. Przytrzymaj klawisz `Shift` i kliknij lewym przyciskiem myszy na istniejącym poligonie nawierzchni w aktywnej warstwie (np. na asfalcie jezdni).
+  2. Narzędzie natychmiast przełącza się w **Tryb Gumki CAD** — na płótnie mapy pojawia się czerwony, półprzezroczysty podgląd dokładnie tego wycinka, który zostanie usunięty:
+     $$\text{Geometria do usunięcia} = \text{Poligon} \cap \text{Dysk}(P_0, R)$$
+  3. Nakładka CAD HUD zmienia kolor na czerwony ostrzegawczy z plakietką `[Gumka CAD / Usuń]` i polem zadanego promienia wycięcia.
+  4. Odsuwając mysz lub wpisując promień z klawiatury (np. `15.0`), ustal żądany zasięg wycięcia i naciśnij `Enter` lub kliknij lewym przyciskiem myszy.
+  5. **Efekt:** Fragment nawierzchni zostaje precyzyjnie wycięty w granicach danego poligonu (sąsiednie chodniki i warstwy pozostają nienaruszone). Jeśli wycięto cały obiekt, zostaje on usunięty z warstwy.
+  6. **Rewizja CAD:** Po wycięciu fragmentu możesz skorygować linie krawężników, a następnie zalać powstałą lukę zwykłym Smart Pour — funkcja *Auto-Merge* automatycznie scali nową nawierzchnię z resztą drogi!
+  7. *Prawy przycisk myszy lub klawisz `Escape` anuluje operację.*
 
 ---
 

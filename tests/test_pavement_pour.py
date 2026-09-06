@@ -16,7 +16,8 @@ from qgis.core import (
     QgsApplication,
     QgsCategorizedSymbolRenderer,
     QgsRendererCategory,
-    QgsFillSymbol
+    QgsFillSymbol,
+    QgsRectangle
 )
 from PyQt5.QtCore import QVariant
 from PyQt5.QtGui import QColor
@@ -33,7 +34,9 @@ from core.pavement_pour_utils import (
     get_contrast_text_color,
     get_layer_category_styles,
     find_category_style,
-    CategoryStyleInfo
+    CategoryStyleInfo,
+    find_polygon_feature_at_point,
+    erase_polygon_with_radius
 )
 
 
@@ -279,7 +282,110 @@ class TestPavementPourUtils(unittest.TestCase):
         unique_cats = get_layer_unique_categories(cat_layer)
         self.assertEqual(unique_cats, ["asfalt", "ddr", "trawa"])
 
+    def test_find_polygon_feature_at_point(self):
+        f = QgsFeature(self.layer.fields())
+        f.setAttributes([1, "asfalt"])
+        f.setGeometry(QgsGeometry.fromRect(QgsRectangle(0, 0, 10, 10)))
+        self.layer.addFeature(f)
+
+        pt_inside = QgsPointXY(5.0, 5.0)
+        feat = find_polygon_feature_at_point(self.layer, pt_inside)
+        self.assertIsNotNone(feat)
+        self.assertEqual(feat.attribute("kategoria"), "asfalt")
+
+        # Punkt poza poligonem
+        pt_outside = QgsPointXY(50.0, 50.0)
+        feat_none = find_polygon_feature_at_point(self.layer, pt_outside)
+        self.assertIsNone(feat_none)
+
+    def test_erase_polygon_with_radius_partial(self):
+        # Poligon 10x10, powierzchnia początkowa = 100
+        f = QgsFeature(self.layer.fields())
+        f.setAttributes([1, "asfalt"])
+        f.setGeometry(QgsGeometry.fromRect(QgsRectangle(0, 0, 10, 10)))
+        self.layer.addFeature(f)
+
+        feat = find_polygon_feature_at_point(self.layer, QgsPointXY(5.0, 5.0))
+        self.assertIsNotNone(feat)
+        orig_area = feat.geometry().area()
+        self.assertAlmostEqual(orig_area, 100.0, delta=0.1)
+
+        # Wycinek kołem w narożniku (0,0) o promieniu 2.0 (ćwiartka koła)
+        success = erase_polygon_with_radius(self.layer, feat.id(), QgsPointXY(0.0, 0.0), 2.0)
+        self.assertTrue(success)
+
+        # Obiekt powinien nadal istnieć, ale mieć mniejsze pole powierzchni
+        updated_feat = self.layer.getFeature(feat.id())
+        self.assertTrue(updated_feat.isValid())
+        new_area = updated_feat.geometry().area()
+        self.assertLess(new_area, orig_area)
+        # Oczekiwana redukcja ~ pi * 2^2 / 4 = pi ~ 3.14159
+        self.assertAlmostEqual(orig_area - new_area, 3.14159, delta=0.2)
+        self.assertTrue(updated_feat.geometry().isGeosValid())
+
+    def test_erase_polygon_with_radius_full_delete(self):
+        # Dodajemy mały poligon 2x2
+        small_layer = QgsVectorLayer("Polygon?crs=EPSG:2180", "SmallLayer", "memory")
+        small_layer.startEditing()
+        f = QgsFeature()
+        f.setGeometry(QgsGeometry.fromRect(QgsRectangle(0, 0, 2, 2)))
+        small_layer.addFeature(f)
+        self.assertEqual(small_layer.featureCount(), 1)
+
+        feat_id = [ft.id() for ft in small_layer.getFeatures()][0]
+
+        # Wycinamy dyskiem o promieniu 10.0 wokół (1,1) - obejmuje cały poligon
+        success = erase_polygon_with_radius(small_layer, feat_id, QgsPointXY(1.0, 1.0), 10.0)
+        self.assertTrue(success)
+        self.assertEqual(small_layer.featureCount(), 0)
+
+    def test_erase_polygon_single_part_splitting(self):
+        # Warstwa jednoelementowa SinglePart
+        single_layer = QgsVectorLayer("Polygon?crs=EPSG:2180", "SinglePartLayer", "memory")
+        pr = single_layer.dataProvider()
+        pr.addAttributes([QgsField("kategoria", QVariant.String)])
+        single_layer.updateFields()
+        single_layer.startEditing()
+
+        # Długi prostokąt od x=0 do x=20, y=-2 do y=2
+        f = QgsFeature(single_layer.fields())
+        f.setAttribute("kategoria", "jezdnia")
+        f.setGeometry(QgsGeometry.fromRect(QgsRectangle(0, -2, 20, 2)))
+        single_layer.addFeature(f)
+        self.assertEqual(single_layer.featureCount(), 1)
+
+        feat_id = [ft.id() for ft in single_layer.getFeatures()][0]
+
+        # Wycinamy dyskiem o promieniu 3.0 w środku (10, 0)
+        # Ponieważ wysokość to 4 (od -2 do 2), promień 3.0 w pełni przecina prostokąt w poprzek!
+        success = erase_polygon_with_radius(single_layer, feat_id, QgsPointXY(10.0, 0.0), 3.0)
+        self.assertTrue(success)
+
+        # Warstwa SinglePart powinna teraz zawierać 2 obiekty (lewy i prawy fragment)
+        features = list(single_layer.getFeatures())
+        self.assertEqual(len(features), 2)
+        for ft in features:
+            self.assertEqual(ft.attribute("kategoria"), "jezdnia")
+            self.assertTrue(ft.geometry().isGeosValid())
+            self.assertGreater(ft.geometry().area(), 0)
+
+    def test_erase_polygon_outside_no_change(self):
+        f = QgsFeature(self.layer.fields())
+        f.setAttributes([1, "asfalt"])
+        f.setGeometry(QgsGeometry.fromRect(QgsRectangle(0, 0, 10, 10)))
+        self.layer.addFeature(f)
+
+        feat = find_polygon_feature_at_point(self.layer, QgsPointXY(5.0, 5.0))
+        self.assertIsNotNone(feat)
+        orig_area = feat.geometry().area()
+
+        # Dysk daleko poza poligonem
+        success = erase_polygon_with_radius(self.layer, feat.id(), QgsPointXY(100.0, 100.0), 5.0)
+        self.assertFalse(success)
+        self.assertAlmostEqual(self.layer.getFeature(feat.id()).geometry().area(), orig_area)
+
 
 if __name__ == '__main__':
     unittest.main()
+
 
