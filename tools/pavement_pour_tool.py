@@ -9,7 +9,7 @@
 
 import math
 from enum import Enum
-from typing import Optional, List, Set, Dict
+from typing import Optional, List, Set, Dict, Tuple
 from qgis.PyQt.QtCore import Qt, QPoint, QEvent, QVariant
 from qgis.PyQt.QtGui import QColor, QCursor
 from qgis.PyQt.QtWidgets import (
@@ -128,6 +128,8 @@ class PavementPourTool(BaseCurveTool):
         self.cached_boundary_radius: float = 0.0
         self.category_styles: Dict[str, CategoryStyleInfo] = {}
         self._connected_style_layer: Optional[QgsVectorLayer] = None
+        self._last_canvas_pt: Optional[QgsPointXY] = None
+        self._last_mouse_pos: QPoint = QPoint(0, 0)
 
         # Zakres warstw krawędzi (bariery)
         self.selected_boundary_layer_ids: Set[str] = set()
@@ -570,6 +572,72 @@ class PavementPourTool(BaseCurveTool):
 
         return boundaries
 
+    def raw_point_layer(self, e: QgsMapMouseEvent, layer: Optional[QgsVectorLayer] = None) -> Tuple[QgsPointXY, QgsPointXY]:
+        """
+        Zwraca krotkę (canvas_point, layer_point) bez używania mechanizmu przyciągania (snapping).
+        Dzięki temu punkt początkowy P0 i promień wylewania trafiają dokładnie w miejsce kliknięcia.
+        """
+        canvas_pt = QgsPointXY(e.mapPoint())
+        layer_pt = self.to_layer_point(layer, canvas_pt) if layer else canvas_pt
+        return canvas_pt, layer_pt
+
+    def _switch_pour_mode(
+        self,
+        new_mode: PourMode,
+        curr_canvas_pt: Optional[QgsPointXY] = None,
+        mouse_pos: Optional[QPoint] = None
+    ):
+        """
+        Dynamicznie przełącza tryb pomiędzy wylewaniem (POUR) a wycinaniem (ERASE).
+        Aktualizuje barwy gumek podglądu, geometrię wycinka/wylania oraz nakładkę HUD CAD.
+        """
+        if self.state != self.STATE_POURING:
+            return
+
+        if new_mode == PourMode.ERASE and not self.target_erase_geom:
+            self._set_status_tip(tr(
+                "MSA Smart Pour: Punkt początkowy nie leży na żadnym obiekcie nawierzchni - brak poligonu do wycięcia.",
+                "MSA Smart Pour: Start point is not on any pavement feature - no polygon to erase."
+            ))
+            return
+
+        if self.pour_mode == new_mode:
+            return
+
+        self.pour_mode = new_mode
+        canvas_pt = curr_canvas_pt or self._last_canvas_pt or self.start_canvas_pt
+        pos = mouse_pos or self._last_mouse_pos
+
+        if self.pour_mode == PourMode.ERASE:
+            # Czerwone gumki podglądu dla trybu wycinania
+            self.preview_band.setColor(QColor(220, 53, 69, 110))
+            self.preview_band.setStrokeColor(QColor(220, 53, 69, 230))
+            self.start_pt_band.setColor(QColor(220, 53, 69, 230))
+            self._update_preview(self.current_radius, canvas_pt)
+            self.overlay.update_values(
+                self.current_radius, "", pos, None, has_field=False, is_erase=True
+            )
+            self._set_status_tip(tr(
+                "MSA Smart Pour: [GUMKA CAD] Wycinanie fragmentu nawierzchni (trzymaj Shift). Puść Shift, aby wylewać.",
+                "MSA Smart Pour: [CAD ERASER] Erasing pavement section (hold Shift). Release Shift to pour."
+            ))
+        else:
+            # Błękitne gumki podglądu dla trybu wylewania
+            self.preview_band.setColor(QColor(13, 110, 253, 90))
+            self.preview_band.setStrokeColor(QColor(13, 110, 253, 220))
+            self.start_pt_band.setColor(QColor(13, 110, 253, 230))
+            self._update_preview(self.current_radius, canvas_pt)
+            cat_display = self._get_active_category_display()
+            style = find_category_style(self.category_styles, cat_display)
+            has_field = bool(self.selected_category_field)
+            self.overlay.update_values(
+                self.current_radius, cat_display, pos, style, has_field=has_field, is_erase=False
+            )
+            self._set_status_tip(tr(
+                "MSA Smart Pour: Wylewanie nawierzchni. Naciśnij i przytrzymaj Shift, aby wyciąć fragment gumką CAD.",
+                "MSA Smart Pour: Pouring pavement. Press and hold Shift to erase section with CAD eraser."
+            ))
+
     def canvasPressEvent(self, e: QgsMapMouseEvent):
         if e.button() == Qt.RightButton:
             self._cancel_operation()
@@ -587,69 +655,67 @@ class PavementPourTool(BaseCurveTool):
                 return
 
             if self.state == self.STATE_IDLE:
-                # Krok 1: Wskazanie punktu startowego P0
-                self.start_canvas_pt, self.start_layer_pt = self.snap_point_layer(e, layer)
-                is_shift = bool(e.modifiers() & Qt.ShiftModifier)
+                # Krok 1: Wskazanie punktu startowego P0 (bez snappingu!)
+                self.start_canvas_pt, self.start_layer_pt = self.raw_point_layer(e, layer)
+                self._last_canvas_pt = self.start_canvas_pt
+                self._last_mouse_pos = e.pos()
 
-                if is_shift:
-                    # TRYB GUMKI CAD (Wycinanie nawierzchni Shift + Klik)
-                    target_feat = find_polygon_feature_at_point(layer, self.start_layer_pt)
-                    if not target_feat:
-                        if self.iface:
-                            self.iface.messageBar().pushInfo(
-                                "MSA: CurveMaster",
-                                tr("No surface polygon found under cursor to erase.",
-                                   "Nie znaleziono obiektu nawierzchni pod kursorem do wycięcia.")
-                            )
-                        return
+                is_shift = bool(e.modifiers() & Qt.ShiftModifier) or bool(QApplication.keyboardModifiers() & Qt.ShiftModifier)
 
-                    self.pour_mode = PourMode.ERASE
+                # Wyszukaj obiekt nawierzchni pod P0 dla potencjalnego trybu wycinania
+                tol = max(0.1, self.canvas().mapUnitsPerPixel() * 5) if self.canvas() else 0.1
+                target_feat = find_polygon_feature_at_point(layer, self.start_layer_pt, tolerance=tol)
+                if target_feat:
                     self.target_erase_feature_id = target_feat.id()
                     self.target_erase_geom = QgsGeometry(target_feat.geometry())
+                else:
+                    self.target_erase_feature_id = None
+                    self.target_erase_geom = None
 
+                if is_shift and not target_feat:
+                    if self.iface:
+                        self.iface.messageBar().pushInfo(
+                            "MSA: CurveMaster",
+                            tr("No surface polygon found under cursor to erase.",
+                               "Nie znaleziono obiektu nawierzchni pod kursorem do wycięcia.")
+                        )
+                    return
+
+                # Zbierz wstępnie linie obwiedni w promieniu wyszukiwania dla trybu wylewania
+                self.cached_boundary_radius = max(self.last_used_radius * 2.0, 100.0)
+                self.cached_boundary_lines = self._collect_boundary_geometries(
+                    layer, self.start_layer_pt, self.cached_boundary_radius
+                )
+
+                self.state = self.STATE_POURING
+                self.current_radius = self.last_used_radius
+
+                # Pokaż znacznik P0
+                self.start_pt_band.reset(QgsWkbTypes.PointGeometry)
+                self.start_pt_band.addPoint(self.start_canvas_pt)
+
+                # Wstępne ustawienie trybu w zależności od Shift
+                self.pour_mode = PourMode.ERASE if is_shift else PourMode.POUR
+
+                if self.pour_mode == PourMode.ERASE:
                     # Czerwone gumki podglądu dla trybu wycinania
                     self.preview_band.setColor(QColor(220, 53, 69, 110))
                     self.preview_band.setStrokeColor(QColor(220, 53, 69, 230))
                     self.start_pt_band.setColor(QColor(220, 53, 69, 230))
-
-                    self.state = self.STATE_POURING
-                    self.current_radius = self.last_used_radius
-
-                    # Pokaż znacznik P0
-                    self.start_pt_band.reset(QgsWkbTypes.PointGeometry)
-                    self.start_pt_band.addPoint(self.start_canvas_pt)
-
-                    # Oblicz pierwszy podgląd i pokaż overlay CAD w trybie gumki
                     self._update_preview(self.current_radius, self.start_canvas_pt)
                     self.overlay.set_last_radius(self.last_used_radius)
                     self.overlay.update_values(
                         self.current_radius, "", e.pos(), None, has_field=False, is_erase=True
                     )
+                    self._set_status_tip(tr(
+                        "MSA Smart Pour: [GUMKA CAD] Wycinanie fragmentu nawierzchni (trzymaj Shift). Puść Shift, aby wylewać.",
+                        "MSA Smart Pour: [CAD ERASER] Erasing pavement section (hold Shift). Release Shift to pour."
+                    ))
                 else:
-                    # TRYB STANDARDOWY (Wylewanie nawierzchni)
-                    self.pour_mode = PourMode.POUR
-                    self.target_erase_feature_id = None
-                    self.target_erase_geom = None
-
                     # Błękitne gumki podglądu dla trybu wylewania
                     self.preview_band.setColor(QColor(13, 110, 253, 90))
                     self.preview_band.setStrokeColor(QColor(13, 110, 253, 220))
                     self.start_pt_band.setColor(QColor(13, 110, 253, 230))
-
-                    self.state = self.STATE_POURING
-                    self.current_radius = self.last_used_radius
-
-                    # Pokaż znacznik P0
-                    self.start_pt_band.reset(QgsWkbTypes.PointGeometry)
-                    self.start_pt_band.addPoint(self.start_canvas_pt)
-
-                    # Zbierz wstępnie linie obwiedni w promieniu wyszukiwania
-                    self.cached_boundary_radius = max(self.last_used_radius * 2.0, 100.0)
-                    self.cached_boundary_lines = self._collect_boundary_geometries(
-                        layer, self.start_layer_pt, self.cached_boundary_radius
-                    )
-
-                    # Oblicz pierwszy podgląd i pokaż overlay CAD
                     self._update_preview(self.current_radius, self.start_canvas_pt)
                     self.overlay.set_last_radius(self.last_used_radius)
                     cat_display = self._get_active_category_display()
@@ -658,9 +724,19 @@ class PavementPourTool(BaseCurveTool):
                     self.overlay.update_values(
                         self.current_radius, cat_display, e.pos(), style, has_field=has_field, is_erase=False
                     )
+                    self._set_status_tip(tr(
+                        "MSA Smart Pour: Wylewanie nawierzchni. Naciśnij i przytrzymaj Shift, aby wyciąć fragment gumką CAD.",
+                        "MSA Smart Pour: Pouring pavement. Press and hold Shift to erase section with CAD eraser."
+                    ))
 
             elif self.state == self.STATE_POURING:
                 # Krok 2: Kliknięcie potwierdza promień i zatwierdza operację
+                is_shift = bool(e.modifiers() & Qt.ShiftModifier) or bool(QApplication.keyboardModifiers() & Qt.ShiftModifier)
+                if is_shift and self.target_erase_geom:
+                    self.pour_mode = PourMode.ERASE
+                elif not is_shift and not self.overlay.edit_radius.hasFocus():
+                    self.pour_mode = PourMode.POUR
+
                 if self.pour_mode == PourMode.ERASE:
                     self._commit_erase()
                 else:
@@ -669,13 +745,23 @@ class PavementPourTool(BaseCurveTool):
     def canvasMoveEvent(self, e: QgsMapMouseEvent):
         if self.state == self.STATE_POURING and self.start_layer_pt:
             layer = self.active_editable_polygon_layer()
-            curr_canvas_pt, curr_layer_pt = self.snap_point_layer(e, layer)
+            curr_canvas_pt, curr_layer_pt = self.raw_point_layer(e, layer)
+            self._last_canvas_pt = curr_canvas_pt
+            self._last_mouse_pos = e.pos()
 
             # Promień jako odległość od P0 do kursora
             dx = curr_layer_pt.x() - self.start_layer_pt.x()
             dy = curr_layer_pt.y() - self.start_layer_pt.y()
             radius = math.sqrt(dx * dx + dy * dy)
             self.current_radius = max(0.5, radius)
+
+            # Dynamiczne sprawdzanie stanu Shift podczas przeciągania
+            if not self.overlay.edit_radius.hasFocus():
+                is_shift = bool(e.modifiers() & Qt.ShiftModifier) or bool(QApplication.keyboardModifiers() & Qt.ShiftModifier)
+                desired_mode = PourMode.ERASE if is_shift else PourMode.POUR
+                if desired_mode != self.pour_mode and (desired_mode == PourMode.POUR or self.target_erase_geom):
+                    self._switch_pour_mode(desired_mode, curr_canvas_pt, e.pos())
+                    return
 
             if self.pour_mode == PourMode.ERASE:
                 self._update_preview(self.current_radius, curr_canvas_pt)
@@ -699,11 +785,11 @@ class PavementPourTool(BaseCurveTool):
                     self.current_radius, cat_display, e.pos(), style, has_field=has_field, is_erase=False
                 )
         elif self.state == self.STATE_IDLE:
-            is_shift = bool(e.modifiers() & Qt.ShiftModifier)
+            is_shift = bool(e.modifiers() & Qt.ShiftModifier) or bool(QApplication.keyboardModifiers() & Qt.ShiftModifier)
             if is_shift:
                 self._set_status_tip(tr(
-                    "MSA Smart Pour: [GUMKA CAD] Kliknij na poligon, aby rozpocząć wycinanie fragmentu.",
-                    "MSA Smart Pour: [GUMKA CAD] Kliknij na poligon, aby rozpocząć wycinanie fragmentu."
+                    "MSA Smart Pour: [GUMKA CAD] Kliknij i przytrzymaj Shift, aby wyciąć fragment poligonu.",
+                    "MSA Smart Pour: [CAD ERASER] Click and hold Shift to erase polygon section."
                 ))
 
     def _update_preview(self, radius: float, curr_canvas_pt: Optional[QgsPointXY] = None):
@@ -722,7 +808,7 @@ class PavementPourTool(BaseCurveTool):
                 self.current_poly_geom = cut_preview
                 if cut_preview and not cut_preview.isEmpty():
                     canvas_geom = self._to_canvas_geometry(layer, cut_preview)
-                    self.preview_band.setToGeometry(canvas_geom, layer)
+                    self.preview_band.setToGeometry(canvas_geom, None)
                 else:
                     self.preview_band.reset(QgsWkbTypes.PolygonGeometry)
             else:
@@ -737,7 +823,7 @@ class PavementPourTool(BaseCurveTool):
 
             if poly and not poly.isEmpty():
                 canvas_geom = self._to_canvas_geometry(layer, poly)
-                self.preview_band.setToGeometry(canvas_geom, layer)
+                self.preview_band.setToGeometry(canvas_geom, None)
             else:
                 self.preview_band.reset(QgsWkbTypes.PolygonGeometry)
 
@@ -920,27 +1006,53 @@ class PavementPourTool(BaseCurveTool):
         if self.start_pt_band:
             self.start_pt_band.reset(QgsWkbTypes.PointGeometry)
 
+    def keyPressEvent(self, e):
+        if self.state == self.STATE_POURING and e.key() == Qt.Key_Shift:
+            self._switch_pour_mode(PourMode.ERASE)
+            return
+        elif e.key() == Qt.Key_Escape:
+            self._cancel_operation()
+            return
+        super().keyPressEvent(e)
+
+    def keyReleaseEvent(self, e):
+        if self.state == self.STATE_POURING and e.key() == Qt.Key_Shift:
+            if not self.overlay.edit_radius.hasFocus():
+                self._switch_pour_mode(PourMode.POUR)
+            return
+        super().keyReleaseEvent(e)
+
     def eventFilter(self, obj, event):
-        """Przechwytuje klawisze Tab, Shift+Tab oraz Enter na płótnie mapy."""
-        if obj == self.canvas() and event.type() == QEvent.KeyPress:
-            key = event.key()
-            if self.state == self.STATE_POURING:
-                if key in (Qt.Key_Tab, Qt.Key_Backtab):
-                    if self.pour_mode == PourMode.ERASE:
+        """Przechwytuje klawisze Tab, Shift, Enter oraz Escape na płótnie mapy."""
+        if obj == self.canvas():
+            if event.type() == QEvent.KeyPress:
+                key = event.key()
+                if self.state == self.STATE_POURING:
+                    if key == Qt.Key_Shift:
+                        self._switch_pour_mode(PourMode.ERASE)
                         return True
-                    if key == Qt.Key_Backtab or (event.modifiers() & Qt.ShiftModifier):
-                        self._cycle_category(-1)
-                    else:
-                        self._cycle_category(1)
-                    return True
-                elif key in (Qt.Key_Return, Qt.Key_Enter):
-                    if self.pour_mode == PourMode.ERASE:
-                        self._commit_erase()
-                    else:
-                        self._commit_pour()
-                    return True
-                elif key == Qt.Key_Escape:
-                    self._cancel_operation()
-                    return True
+                    elif key in (Qt.Key_Tab, Qt.Key_Backtab):
+                        if self.pour_mode == PourMode.ERASE:
+                            return True
+                        if key == Qt.Key_Backtab:
+                            self._cycle_category(-1)
+                        else:
+                            self._cycle_category(1)
+                        return True
+                    elif key in (Qt.Key_Return, Qt.Key_Enter):
+                        if self.pour_mode == PourMode.ERASE:
+                            self._commit_erase()
+                        else:
+                            self._commit_pour()
+                        return True
+                    elif key == Qt.Key_Escape:
+                        self._cancel_operation()
+                        return True
+            elif event.type() == QEvent.KeyRelease:
+                key = event.key()
+                if self.state == self.STATE_POURING and key == Qt.Key_Shift:
+                    if not self.overlay.edit_radius.hasFocus():
+                        self._switch_pour_mode(PourMode.POUR)
+                        return True
 
         return super().eventFilter(obj, event)

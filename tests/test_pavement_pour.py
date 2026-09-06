@@ -385,7 +385,67 @@ class TestPavementPourUtils(unittest.TestCase):
         self.assertAlmostEqual(self.layer.getFeature(feat.id()).geometry().area(), orig_area)
 
 
+class TestPavementPourTool(unittest.TestCase):
+
+    def setUp(self):
+        import sys
+        import os
+        parent = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        parent_parent = os.path.dirname(parent)
+        if parent_parent not in sys.path:
+            sys.path.insert(0, parent_parent)
+        from qgis.gui import QgsMapCanvas
+        from msa_curvemaster.gui.settings_widget import CurveSettingsWidget
+        from msa_curvemaster.tools.pavement_pour_tool import PavementPourTool, PourMode
+        self.PourMode = PourMode
+        self.canvas = QgsMapCanvas()
+        self.settings = CurveSettingsWidget()
+        self.tool = PavementPourTool(self.canvas, self.settings)
+        self.layer = QgsVectorLayer("Polygon?crs=EPSG:2180", "TestLayer", "memory")
+        self.layer.startEditing()
+
+    def tearDown(self):
+        self.tool.deactivate()
+        if self.layer.isEditable():
+            self.layer.rollBack()
+
+    def test_raw_point_layer_no_snapping(self):
+        from unittest.mock import MagicMock
+        mock_event = MagicMock()
+        mock_event.mapPoint.return_value = QgsPointXY(123.456, 789.012)
+
+        canvas_pt, layer_pt = self.tool.raw_point_layer(mock_event, self.layer)
+        self.assertAlmostEqual(canvas_pt.x(), 123.456, places=3)
+        self.assertAlmostEqual(canvas_pt.y(), 789.012, places=3)
+        self.assertAlmostEqual(layer_pt.x(), 123.456, places=3)
+        self.assertAlmostEqual(layer_pt.y(), 789.012, places=3)
+
+    def test_switch_pour_mode_dynamic(self):
+        PourMode = self.PourMode
+        self.tool.state = self.tool.STATE_POURING
+        self.tool.start_layer_pt = QgsPointXY(5.0, 5.0)
+        self.tool.start_canvas_pt = QgsPointXY(5.0, 5.0)
+        self.tool.current_radius = 10.0
+
+        # Bez target_erase_geom próba włączenia ERASE powinna zostać zablokowana
+        self.tool.target_erase_geom = None
+        self.tool._switch_pour_mode(PourMode.ERASE)
+        self.assertEqual(self.tool.pour_mode, PourMode.POUR)
+
+        # Po ustawieniu geometrii poligonu przełączanie powinno działać
+        self.tool.target_erase_geom = QgsGeometry.fromRect(QgsRectangle(0, 0, 20, 20))
+        self.tool._switch_pour_mode(PourMode.ERASE)
+        self.assertEqual(self.tool.pour_mode, PourMode.ERASE)
+        self.assertTrue(self.tool.overlay.is_erase_mode)
+
+        # Powrót do POUR po zwolnieniu Shift
+        self.tool._switch_pour_mode(PourMode.POUR)
+        self.assertEqual(self.tool.pour_mode, PourMode.POUR)
+        self.assertFalse(self.tool.overlay.is_erase_mode)
+
+
 if __name__ == '__main__':
     unittest.main()
+
 
 
