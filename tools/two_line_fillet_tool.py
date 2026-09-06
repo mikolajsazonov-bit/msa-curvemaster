@@ -281,7 +281,8 @@ class TwoLineFilletTool(BaseCurveTool):
             click2=self.line2_click_pt,
             radius=self.current_radius,
             mode=mode,
-            step_value=step_val
+            step_value=step_val,
+            is_same_line=(self.line1_feat_id == self.line2_feat_id)
         )
 
         if res is not None:
@@ -325,7 +326,8 @@ class TwoLineFilletTool(BaseCurveTool):
             click2=self.line2_click_pt,
             radius=radius_val,
             mode=mode,
-            step_value=step_val
+            step_value=step_val,
+            is_same_line=(self.line1_feat_id == self.line2_feat_id)
         )
 
         if res is not None:
@@ -391,6 +393,27 @@ class TwoLineFilletTool(BaseCurveTool):
             ))
 
         elif self.state == self.STATE_SELECT_SECOND:
+            target = self._find_line_near(active_layer, canvas_pt, layer_pt, exclude_feat_id=None)
+            if target:
+                feat_id, part, pts, seg = target
+                if not (feat_id == self.line1_feat_id and len(pts) <= 2):
+                    self.line2_feat_id = feat_id
+                    self.line2_part_idx = part
+                    self.line2_pts = pts
+                    self.line2_click_pt = (layer_pt.x(), layer_pt.y())
+                    mode = self.settings().sampling_mode()
+                    step_val = self.settings().step_value()
+                    self.current_result = fillet_two_lines_2d(
+                        pts1=self.line1_pts,
+                        click1=self.line1_click_pt,
+                        pts2=self.line2_pts,
+                        click2=self.line2_click_pt,
+                        radius=self.current_radius,
+                        mode=mode,
+                        step_value=step_val,
+                        is_same_line=(self.line1_feat_id == self.line2_feat_id)
+                    )
+
             if not self.current_result:
                 return
 
@@ -424,7 +447,8 @@ class TwoLineFilletTool(BaseCurveTool):
             click2=self.line2_click_pt,
             radius=radius_val,
             mode=mode,
-            step_value=step_val
+            step_value=step_val,
+            is_same_line=(self.line1_feat_id == self.line2_feat_id)
         )
         if res is not None:
             self.current_result = res
@@ -446,15 +470,17 @@ class TwoLineFilletTool(BaseCurveTool):
         active_layer.beginEditCommand(tr(f"MSA: Two-line fillet (R={res.radius:.2f} m)",
                                          f"MSA: Zaokrąglij dwie linie (R={res.radius:.2f} m)"))
 
-        # SCENARIUSZ 1: Narożnik (żadna linia nie kontynuuje się) + włączone scalanie w jedną polilinię
-        if not res.line1_continues and not res.line2_continues and TwoLineFilletTool.join_corner_lines and res.joined_corner:
+        is_same_feat = (self.line2_feat_id == self.line1_feat_id)
+
+        # SCENARIUSZ 1: Narożnik (żadna linia nie kontynuuje się) + włączone scalanie w jedną polilinię (lub ta sama linia)
+        if (not res.line1_continues and not res.line2_continues and (TwoLineFilletTool.join_corner_lines or is_same_feat)) and res.joined_corner:
             g_joined = QgsGeometry.fromPolylineXY(tuples_to_qgs_points(res.joined_corner))
             ad_joined = LayerModifier.adapt_geometry_to_layer(active_layer, g_joined)
             if ad_joined:
                 # Nadpisz obiekt 1 scaloną polilinią
                 active_layer.changeGeometry(self.line1_feat_id, ad_joined[0])
                 # Jeśli to były dwa różne obiekty, usuń obiekt 2
-                if self.line2_feat_id != self.line1_feat_id:
+                if not is_same_feat:
                     active_layer.deleteFeature(self.line2_feat_id)
 
         # SCENARIUSZ 2: Linie z kontynuacją lub wyłączone scalanie

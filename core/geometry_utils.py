@@ -1137,23 +1137,28 @@ def fillet_two_lines_2d(
     radius: float,
     mode: SamplingMode = SamplingMode.LINEAR_STEP,
     step_value: float = 1.0,
-    min_segments: int = 4
+    min_segments: int = 4,
+    is_same_line: bool = False
 ) -> Optional[FilletTwoLinesResult]:
     """
-    Oblicza łuk styczny (fillet) o zadanym promieniu między dwoma liniami pts1 i pts2.
+    Oblicza łuk styczny (fillet) o zadanym promieniu między dwoma liniami pts1 i pts2 (lub dwoma segmentami tej samej linii).
     Wskazane punkty click1 i click2 decydują, które ramiona linii mają zostać zachowane.
     Dokonuje automatycznego trimu:
-    - Jeśli linia kończy się przy przecięciu: zostaje skrócona/wydłużona do punktu styczności.
-    - Jeśli linia posiada kontynuację za przecięciem: zostaje rozcięta na część zachowaną (do stycznej)
-      oraz część kontynuacji (od przecięcia dalej), a odcinek między styczną a przecięciem zostaje usunięty.
-    - Jeśli obie linie kończą się przy narożniku: tworzy gotową scaloną polilinię (joined_corner).
+    - Dla dwóch różnych linii: przycina ramiona do punktów styczności i scala w jedną polilinię (joined_corner).
+    - Dla linii przelotowych: zachowuje kontynuację za skrzyżowaniem.
+    - Dla tej samej linii (pętla/wyspa lub narożnik): domyka pętlę łukiem lub zaokrągla narożnik bez utraty wierzchołków.
     """
     if len(pts1) < 2 or len(pts2) < 2:
         return None
 
+    is_same = is_same_line or (pts1 is pts2) or (pts1 == pts2)
+
     # 1. Wyszukaj segmenty najbliższe kliknięciom
     seg1_idx = _find_closest_segment_idx(pts1, click1)
     seg2_idx = _find_closest_segment_idx(pts2, click2)
+
+    if is_same and seg1_idx == seg2_idx:
+        return None
 
     a1, b1 = pts1[seg1_idx], pts1[seg1_idx + 1]
     a2, b2 = pts2[seg2_idx], pts2[seg2_idx + 1]
@@ -1212,11 +1217,39 @@ def fillet_two_lines_2d(
         exact_endpoints=(t1, t2)
     )
 
-    # 4. Analiza geometrii linii 1 i 2 (trim / split)
+    # 4. Obsługa przypadku tej samej linii (pętla/wyspa lub narożnik wewnętrzny)
+    if is_same:
+        joined_same = _fillet_same_line(
+            pts=pts1,
+            seg1_idx=seg1_idx,
+            u1=u1,
+            t1=t1,
+            seg2_idx=seg2_idx,
+            u2=u2,
+            t2=t2,
+            arc_points=arc_points
+        )
+        return FilletTwoLinesResult(
+            apex=apex,
+            radius=eff_radius,
+            t1=t1,
+            t2=t2,
+            center=center,
+            arc_points=arc_points,
+            line1_kept=joined_same,
+            line1_continuation=None,
+            line1_continues=False,
+            line2_kept=[],
+            line2_continuation=None,
+            line2_continues=False,
+            joined_corner=joined_same
+        )
+
+    # 5. Analiza geometrii dwóch oddzielnych linii 1 i 2 (trim / split)
     line1_kept, line1_cont, line1_continues = _trim_or_split_line(pts1, seg1_idx, apex, u1, t1)
     line2_kept, line2_cont, line2_continues = _trim_or_split_line(pts2, seg2_idx, apex, u2, t2)
 
-    # 5. Scalanie narożnika w jedną polilinię (gdy żadna z linii nie kontynuuje się za przecięcie)
+    # 6. Scalanie narożnika w jedną polilinię (gdy żadna z linii nie kontynuuje się za przecięcie)
     joined_corner = None
     if not line1_continues and not line2_continues and line1_kept and line2_kept:
         # Upewniamy się, że line1_kept biegnie w stronę t1
@@ -1255,6 +1288,74 @@ def fillet_two_lines_2d(
         line2_continues=line2_continues,
         joined_corner=joined_corner
     )
+
+
+def _fillet_same_line(
+    pts: List[Point2D],
+    seg1_idx: int,
+    u1: Point2D,
+    t1: Point2D,
+    seg2_idx: int,
+    u2: Point2D,
+    t2: Point2D,
+    arc_points: List[Point2D]
+) -> List[Point2D]:
+    """
+    Łączy dwa segmenty tej samej linii/pętli łukiem zaokrąglenia.
+    - Jeśli to pętla (zamknięcie wyspy): zachowuje całe ciało pętli i domyka łukiem.
+    - Jeśli to narożnik wewnętrzny na polilinii: łączy początek -> t1 -> łuk -> t2 -> koniec.
+    """
+    n = len(pts)
+    if seg1_idx == seg2_idx or n < 2:
+        return list(pts)
+
+    if seg1_idx < seg2_idx:
+        k_low, u_low, t_low = seg1_idx, u1, t1
+        k_high, u_high, t_high = seg2_idx, u2, t2
+        arc_low_to_high = list(arc_points)
+    else:
+        k_low, u_low, t_low = seg2_idx, u2, t2
+        k_high, u_high, t_high = seg1_idx, u1, t1
+        arc_low_to_high = list(reversed(arc_points))
+
+    v_low = (pts[k_low + 1][0] - pts[k_low][0], pts[k_low + 1][1] - pts[k_low][1])
+    low_fwd = (v_low[0] * u_low[0] + v_low[1] * u_low[1] > 0)
+
+    v_high = (pts[k_high + 1][0] - pts[k_high][0], pts[k_high + 1][1] - pts[k_high][1])
+    high_fwd = (v_high[0] * u_high[0] + v_high[1] * u_high[1] > 0)
+
+    if low_fwd and not high_fwd:
+        # Pętla / Wyspa (Loop / Island closing): zachowujemy środek między k_low a k_high
+        mid = [P for P in pts[k_low + 1 : k_high + 1] if distance(P, t_low) > 1e-4 and distance(P, t_high) > 1e-4]
+        path_island = [t_low] + mid + [t_high]
+        arc_high_to_low = list(reversed(arc_low_to_high))
+        combined = list(path_island)
+        for pt in arc_high_to_low[1:]:
+            if distance(combined[-1], pt) > 1e-4:
+                combined.append(pt)
+        if distance(combined[-1], combined[0]) > 1e-4:
+            combined.append(combined[0])
+        return combined
+
+    elif not low_fwd and high_fwd:
+        # Narożnik wewnętrzny na polilinii (Internal corner)
+        part1 = [P for P in pts[: k_low + 1] if distance(P, t_low) > 1e-4] + [t_low]
+        arc_mid = [P for P in arc_low_to_high if distance(P, t_low) > 1e-4 and distance(P, t_high) > 1e-4]
+        part2 = [t_high] + [P for P in pts[k_high + 1 :] if distance(P, t_high) > 1e-4]
+        return part1 + arc_mid + part2
+
+    else:
+        # Fallback: zachowaj środek i domknij jeśli pętla
+        mid = [P for P in pts[k_low + 1 : k_high + 1] if distance(P, t_low) > 1e-4 and distance(P, t_high) > 1e-4]
+        path_island = [t_low] + mid + [t_high]
+        arc_high_to_low = list(reversed(arc_low_to_high))
+        combined = list(path_island)
+        for pt in arc_high_to_low[1:]:
+            if distance(combined[-1], pt) > 1e-4:
+                combined.append(pt)
+        if len(combined) > 2 and distance(pts[0], pts[-1]) < 1e-2 and distance(combined[-1], combined[0]) > 1e-4:
+            combined.append(combined[0])
+        return combined
 
 
 def _find_closest_segment_idx(pts: List[Point2D], pt: Point2D) -> int:
@@ -1304,86 +1405,97 @@ def _trim_or_split_line(
 ) -> Tuple[List[Point2D], Optional[List[Point2D]], bool]:
     """
     Przycinanie lub rozcinanie linii wzdłuż wektora u_dir:
-    - Rzutuje wierzchołki linii na oś u_dir ze środkiem w apex.
-    - Wierzchołki o s > 0 leżą po stronie zachowanej.
-    - Wierzchołki o s < 0 leżą po przeciwnej stronie apex (kontynuacja za przecięciem).
+    - Wyznacza kierunek wzdłuż polilinii (do przodu k+1..n-1 lub w tył k..0).
+    - Zachowuje całe ciało polilinii w kierunku wskazanym przez u_dir, nie obcinając łuków/zakrętów.
+    - Sprawdza, czy linia ma rzeczywistą kontynuację przelotową za wierzchołkiem przecięcia (apex).
     """
     n = len(pts)
     if n < 2:
         return list(pts), None, False
 
-    # Wyznaczenie parametru s dla każdego wierzchołka: s = (pt - apex) . u_dir
-    s_vals = [(pt[0] - apex[0]) * u_dir[0] + (pt[1] - apex[1]) * u_dir[1] for pt in pts]
+    k = clicked_seg_idx
+    if k < 0 or k >= n - 1:
+        k = 0
+
+    p_k = pts[k]
+    p_next = pts[k + 1]
+
+    dx = p_next[0] - p_k[0]
+    dy = p_next[1] - p_k[1]
+    dot = dx * u_dir[0] + dy * u_dir[1]
+    keep_forward = (dot > 0)
+
     d_tangent = math.hypot(tangent_pt[0] - apex[0], tangent_pt[1] - apex[1])
+    min_cont_threshold = max(1.0, 0.05 * d_tangent)
 
-    # Czy linia ma wyraźną kontynuację za przecięciem (w stronę s < 0)?
-    min_s = min(s_vals)
-    has_continuation = (min_s < -max(1.0, 0.05 * d_tangent))
+    if keep_forward:
+        # Idziemy od segmentu k w stronę końca n-1
+        kept_body = []
+        for j in range(k + 1, n):
+            s_j = (pts[j][0] - apex[0]) * u_dir[0] + (pts[j][1] - apex[1]) * u_dir[1]
+            if j == k + 1 and s_j <= d_tangent - 1e-4:
+                continue
+            kept_body.append(pts[j])
 
-    # Wierzchołki po stronie zachowanej (s > d_tangent)
-    # Znajdź koniec linii po stronie zachowanej
-    # Jeśli linia biegnie od wierzchołka 0 do n-1:
-    s_end0 = s_vals[0]
-    s_endN = s_vals[-1]
+        if not kept_body:
+            kept_body = [pts[-1]]
+        line_kept = [tangent_pt] + [p for p in kept_body if distance(p, tangent_pt) > 1e-4]
 
-    if s_end0 > s_endN:
-        # Wierzchołek 0 to daleki koniec po stronie zachowanej
-        far_idx = 0
-        apex_idx = n - 1
-        step = 1
+        # Sprawdzenie kontynuacji po stronie apex (wierzchołki od k wstecz do 0)
+        has_cont = False
+        cont_pts = None
+        for j in range(k, -1, -1):
+            s_j = (pts[j][0] - apex[0]) * u_dir[0] + (pts[j][1] - apex[1]) * u_dir[1]
+            perp_dist = abs((pts[j][0] - apex[0]) * (-u_dir[1]) + (pts[j][1] - apex[1]) * u_dir[0])
+            if s_j < -min_cont_threshold and perp_dist < 2.0:
+                has_cont = True
+                break
+
+        if has_cont:
+            raw_cont = [
+                pts[j] for j in range(k, -1, -1)
+                if ((pts[j][0] - apex[0]) * u_dir[0] + (pts[j][1] - apex[1]) * u_dir[1]) < -1e-4
+            ]
+            if raw_cont:
+                if distance(raw_cont[0], apex) > distance(raw_cont[-1], apex):
+                    raw_cont.reverse()
+                cont_pts = [apex] + [p for p in raw_cont if distance(p, apex) > 1e-4]
+
+        return line_kept, cont_pts, (has_cont and cont_pts is not None and len(cont_pts) >= 2)
+
     else:
-        # Wierzchołek n-1 to daleki koniec po stronie zachowanej
-        far_idx = n - 1
-        apex_idx = 0
-        step = -1
+        # Idziemy od segmentu k wstecz w stronę początku 0
+        kept_body = []
+        for j in range(k, -1, -1):
+            s_j = (pts[j][0] - apex[0]) * u_dir[0] + (pts[j][1] - apex[1]) * u_dir[1]
+            if j == k and s_j <= d_tangent - 1e-4:
+                continue
+            kept_body.append(pts[j])
 
-    kept_pts: List[Point2D] = []
-    idx = far_idx
-    while 0 <= idx < n:
-        if s_vals[idx] >= d_tangent - 1e-4:
-            kept_pts.append(pts[idx])
-        else:
-            break
-        idx += step
+        if not kept_body:
+            kept_body = [pts[0]]
+        kept_body.reverse()
+        line_kept = [p for p in kept_body if distance(p, tangent_pt) > 1e-4] + [tangent_pt]
 
-    # Zwieńcz część zachowaną punktem styczności tangent_pt
-    if not kept_pts:
-        kept_pts.append(pts[far_idx])
-    if distance(kept_pts[-1], tangent_pt) > 1e-4:
-        kept_pts.append(tangent_pt)
+        # Sprawdzenie kontynuacji po stronie apex (wierzchołki od k+1 do n-1)
+        has_cont = False
+        cont_pts = None
+        for j in range(k + 1, n):
+            s_j = (pts[j][0] - apex[0]) * u_dir[0] + (pts[j][1] - apex[1]) * u_dir[1]
+            perp_dist = abs((pts[j][0] - apex[0]) * (-u_dir[1]) + (pts[j][1] - apex[1]) * u_dir[0])
+            if s_j < -min_cont_threshold and perp_dist < 2.0:
+                has_cont = True
+                break
 
-    # Upewnij się, że ma min. 2 punkty
-    if len(kept_pts) < 2:
-        kept_pts.insert(0, pts[far_idx])
+        if has_cont:
+            raw_cont = [
+                pts[j] for j in range(k + 1, n)
+                if ((pts[j][0] - apex[0]) * u_dir[0] + (pts[j][1] - apex[1]) * u_dir[1]) < -1e-4
+            ]
+            if raw_cont:
+                if distance(raw_cont[0], apex) > distance(raw_cont[-1], apex):
+                    raw_cont.reverse()
+                cont_pts = [apex] + [p for p in raw_cont if distance(p, apex) > 1e-4]
 
-    if not has_continuation:
-        return kept_pts, None, False
-
-    # Część kontynuacji (za apex)
-    cont_pts: List[Point2D] = [apex]
-    # Idziemy od strony apex_idx (tam gdzie s < 0)
-    cont_idx = apex_idx
-    cont_step = 1 if apex_idx < far_idx else -1
-    raw_cont: List[Point2D] = []
-
-    c_i = cont_idx
-    while 0 <= c_i < n:
-        if s_vals[c_i] <= 1e-4:
-            raw_cont.append(pts[c_i])
-        else:
-            break
-        c_i += cont_step
-
-    if raw_cont:
-        # Uporządkuj od apex w dal
-        if distance(raw_cont[0], apex) > distance(raw_cont[-1], apex):
-            raw_cont.reverse()
-        for pt in raw_cont:
-            if distance(cont_pts[-1], pt) > 1e-4:
-                cont_pts.append(pt)
-
-    if len(cont_pts) < 2:
-        return kept_pts, None, False
-
-    return kept_pts, cont_pts, True
+        return line_kept, cont_pts, (has_cont and cont_pts is not None and len(cont_pts) >= 2)
 

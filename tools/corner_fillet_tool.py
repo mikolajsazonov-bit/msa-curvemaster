@@ -207,7 +207,8 @@ class CornerFilletTool(BaseCurveTool):
                     ring_idx=self.target_ring,
                     consumed_indices=consumed_indices,
                     replacement_pts=arc_points,
-                    command_name="MSA: Zaokrąglij łukiem"
+                    command_name="MSA: Zaokrąglij łukiem",
+                    is_closed=self.is_closed_ring
                 )
 
         self._cancel_operation()
@@ -239,7 +240,8 @@ class CornerFilletTool(BaseCurveTool):
                         ring_idx=self.target_ring,
                         consumed_indices=consumed_indices,
                         replacement_pts=arc_points,
-                        command_name="MSA: Zaokrąglij łukiem"
+                        command_name="MSA: Zaokrąglij łukiem",
+                        is_closed=self.is_closed_ring
                     )
                     self._cancel_operation()
                     return
@@ -264,7 +266,8 @@ class CornerFilletTool(BaseCurveTool):
                     ring_idx=self.target_ring,
                     consumed_indices=consumed_indices,
                     replacement_pts=arc_points,
-                    command_name="MSA: Zaokrąglij łukiem"
+                    command_name="MSA: Zaokrąglij łukiem",
+                    is_closed=self.is_closed_ring
                 )
             else:
                 if self.iface:
@@ -378,13 +381,21 @@ class CornerFilletTool(BaseCurveTool):
                         pts_list = qgs_points_to_tuples(multi_lines[v_id.part])
                 else:
                     pts_list = qgs_points_to_tuples(geom.asPolyline())
-                is_closed = False
                 if not pts_list or len(pts_list) < 3:
                     continue
-                # Skrajne wierzchołki linii otwartej nie mają sąsiedztwa do zaokrąglenia
-                if v_id.vertex <= 0 or v_id.vertex >= len(pts_list) - 1:
-                    continue
-                target_vertex = v_id.vertex
+
+                # Sprawdzenie czy to pętla zamknięta (punkty startowy i końcowy pokrywają się)
+                is_closed = (distance(pts_list[0], pts_list[-1]) < max(0.1, tol_canvas))
+                if is_closed:
+                    if len(pts_list) < 4:
+                        continue
+                    m = len(pts_list) - 1 if (len(pts_list) > 1 and pts_list[0] == pts_list[-1]) else len(pts_list)
+                    target_vertex = v_id.vertex % m
+                else:
+                    # Skrajne wierzchołki linii otwartej nie mają sąsiedztwa do zaokrąglenia
+                    if v_id.vertex <= 0 or v_id.vertex >= len(pts_list) - 1:
+                        continue
+                    target_vertex = v_id.vertex
 
             elif geom_type == QgsWkbTypes.PolygonGeometry:
                 if is_multi:

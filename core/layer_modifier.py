@@ -117,7 +117,8 @@ class LayerModifier:
         ring_idx: int,
         consumed_indices: List[int],
         replacement_pts: List[Point2D],
-        command_name: str = "MSA: Zaokrąglij łukiem"
+        command_name: str = "MSA: Zaokrąglij łukiem",
+        is_closed: bool = False
     ) -> bool:
         """
         Zastępuje zakres połykanych wierzchołków nową serią punktów łuku.
@@ -134,7 +135,7 @@ class LayerModifier:
             return False
 
         new_geom = LayerModifier._replace_vertex_range_in_geom(
-            orig_geom, part_idx, ring_idx, consumed_indices, replacement_pts
+            orig_geom, part_idx, ring_idx, consumed_indices, replacement_pts, is_closed=is_closed
         )
 
         if new_geom is None or new_geom.isEmpty():
@@ -211,7 +212,8 @@ class LayerModifier:
         part_idx: int,
         ring_idx: int,
         consumed_indices: List[int],
-        fillet_pts: List[Point2D]
+        fillet_pts: List[Point2D],
+        is_closed: bool = False
     ) -> Optional[QgsGeometry]:
         """Zwraca nową QgsGeometry z podmienionym zakresem wierzchołków."""
         geom_type = geom.type()
@@ -223,12 +225,12 @@ class LayerModifier:
                 if part_idx < 0 or part_idx >= len(multi_lines):
                     return None
                 pts = qgs_points_to_tuples(multi_lines[part_idx])
-                new_pts = replace_vertex_range_in_points(pts, consumed_indices, fillet_pts, is_closed=False)
+                new_pts = replace_vertex_range_in_points(pts, consumed_indices, fillet_pts, is_closed=is_closed)
                 multi_lines[part_idx] = tuples_to_qgs_points(new_pts)
                 return QgsGeometry.fromMultiPolylineXY(multi_lines)
             else:
                 pts = qgs_points_to_tuples(geom.asPolyline())
-                new_pts = replace_vertex_range_in_points(pts, consumed_indices, fillet_pts, is_closed=False)
+                new_pts = replace_vertex_range_in_points(pts, consumed_indices, fillet_pts, is_closed=is_closed)
                 return QgsGeometry.fromPolylineXY(tuples_to_qgs_points(new_pts))
 
         elif geom_type == QgsWkbTypes.PolygonGeometry:
