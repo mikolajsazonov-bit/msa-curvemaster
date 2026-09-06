@@ -487,10 +487,19 @@ class TwoLineFilletTool(BaseCurveTool):
         else:
             # 1. Zmiana linii 1
             # Część zachowana linii 1 rozszerzona o łuk sięgający do t2 (dla zachowania ciągłości skrętu)
-            p1_with_arc = list(res.line1_kept)
-            for pt in res.arc_points:
-                if distance(p1_with_arc[-1], pt) > 1e-4:
-                    p1_with_arc.append(pt)
+            if distance(res.line1_kept[-1], res.t1) < 1e-4:
+                # Linia 1 kończy się na t1: dołączamy łuk na końcu (od t1 do t2)
+                p1_with_arc = list(res.line1_kept)
+                for pt in res.arc_points:
+                    if distance(p1_with_arc[-1], pt) > 1e-4:
+                        p1_with_arc.append(pt)
+            else:
+                # Linia 1 zaczyna się na t1: dołączamy łuk z przodu (od t2 do t1)
+                arc_reversed = list(reversed(res.arc_points))
+                p1_with_arc = list(arc_reversed)
+                for pt in res.line1_kept:
+                    if distance(p1_with_arc[-1], pt) > 1e-4:
+                        p1_with_arc.append(pt)
 
             g1_kept = QgsGeometry.fromPolylineXY(tuples_to_qgs_points(p1_with_arc))
             ad1_kept = LayerModifier.adapt_geometry_to_layer(active_layer, g1_kept)

@@ -6,7 +6,7 @@ description=CAD tool for interactive curve adjustment, fillet rounding, Trim/Ext
 about=Enables interactive bending of segments into arcs, corner and two-line fillet rounding with auto-trim, AutoCAD-style Trim/Extend, CAD parallel offset, polyline/polygon drawing with Polar Tracking, and CAD Smart Pour for interactive pavement surface filling between curbs with dynamic radius, auto-merge, and Shift+Click CAD Smart Erase cutout. Includes on-canvas CAD HUD overlays with keyboard entry, multi-layer boundary detection, and full Undo/Redo support.
 description[pl]=Narzędzie CAD do korekty łuków, zaokrąglania narożników (fillet), trim/extend, offsetu, rysowania z Polar Trackingiem oraz wylewania i wycinania nawierzchni (Smart Pour / Smart Erase)
 about[pl]=Wtyczka umożliwia precyzyjne wyginanie prostych odcinków w łuki, zaokrąglanie wierzchołków i narożników dwóch linii (fillet) z automatycznym docięciem, przycinanie i wydłużanie obiektów (Trim/Extend), prosty offset równoległy CAD, rysowanie ze śledzeniem biegunowym (Polar Tracking) oraz interaktywne wylewanie nawierzchni (CAD Smart Pour) między krawężnikami z automatycznym scalaniem (Auto-Merge) i wycinaniem fragmentów (Shift+Click Gumka CAD). Posiada pływające okienka CAD HUD z wpisywaniem wartości z klawiatury oraz pełną obsługę Undo/Redo.
-version=1.5.2
+version=1.5.3
 author=Mikołaj Sazonov
 email=curvemaster@sazonov.work
 tracker=https://github.com/mikolajsazonov-bit/msa-curvemaster/issues
@@ -17,7 +17,11 @@ icon=icon.png
 experimental=False
 deprecated=False
 tags=curves, arc, fillet, trim, extend, offset, parallel, polar, tracking, angle, cad, geometry, polyline, polygon, digitizing, vector, smart pour, smart erase, pavement, boundary, hatch
-changelog=1.5.2:
+changelog=1.5.3:
+    - Two-line Fillet: Fixed spurious chord creation when filleting between two curved polylines / arcs by filtering all intermediate vertices inside the cut corner
+    - Two-line Fillet: Preserved natural line orientation and digitizing direction during fillet trim and arc attachment
+    - Two-line Fillet: Resolved corner segments when lines meet at terminal vertices even if clicked further along the curves
+1.5.2:
     - Two-line Fillet: Added robust closed loop / island filleting preserving 100% of body vertices and cleanly closing loops
     - Two-line Fillet: Fixed spurious continuation on curved lines to cleanly merge corner lines into a single singlepart LineString without multipart conflicts
     - Corner Fillet: Added support for closed polyline loops and vertex 0 filleting

@@ -198,6 +198,65 @@ class TestTwoLineFilletGeometry(unittest.TestCase):
         self.assertAlmostEqual(res.joined_corner[-1][0], 10.0)
         self.assertAlmostEqual(res.joined_corner[-1][1], 0.0)
 
+    def test_two_arcs_fillet_no_chords(self):
+        # Łuk A i Łuk B: dwie krzywe (wielosegmentowe polilinie) schodzące się w narożniku (0, 0)
+        # Obie krzywe mają wiele punktów pośrednich, w tym leżące wewnątrz promienia zaokrąglenia
+        pts_arc_a = [
+            (0.0, 20.0),
+            (1.0, 15.0),
+            (1.5, 10.0),
+            (1.2, 5.0),
+            (0.5, 2.0),     # wewnątrz narożnika (< tangent_pt)
+            (0.1, 0.5),     # wewnątrz narożnika
+            (0.0, 0.0)      # koniec łuku A w narożniku
+        ]
+
+        pts_arc_b = [
+            (0.0, 0.0),      # początek łuku B w narożniku
+            (0.5, 0.1),     # wewnątrz narożnika
+            (2.0, 0.5),     # wewnątrz narożnika (< tangent_pt)
+            (5.0, 1.2),
+            (10.0, 1.5),
+            (15.0, 1.0),
+            (20.0, 0.0)
+        ]
+
+        # Użytkownik klika w środku łuków (np. y=10 i x=10)
+        click_a = (1.5, 10.0)
+        click_b = (10.0, 1.5)
+
+        res = fillet_two_lines_2d(
+            pts1=pts_arc_a,
+            click1=click_a,
+            pts2=pts_arc_b,
+            click2=click_b,
+            radius=4.0
+        )
+
+        self.assertIsNotNone(res)
+        self.assertIsNotNone(res.joined_corner)
+
+        # 1. Sprawdzenie czy punkty wewnętrzne narożnika zostały wycięte
+        # (żaden punkt w joined_corner nie może być punktem (0.5, 2.0), (0.1, 0.5), ani (0,0))
+        corner_cut_pts = {(0.5, 2.0), (0.1, 0.5), (0.0, 0.0), (0.5, 0.1), (2.0, 0.5)}
+        for pt in res.joined_corner:
+            for bad_pt in corner_cut_pts:
+                self.assertGreater(distance(pt, bad_pt), 0.05, f"Point {bad_pt} was not cut and formed a chord!")
+
+        # 2. Sprawdzenie ciągłości i braku cofnięć (brak cięciw)
+        # Na odcinku łuku A: współrzędne y powinny monotonicznie maleć
+        # Na odcinku łuku B: współrzędne x powinny monotonicznie rosnąć
+        self.assertAlmostEqual(res.joined_corner[0][0], 0.0)
+        self.assertAlmostEqual(res.joined_corner[0][1], 20.0)
+        self.assertAlmostEqual(res.joined_corner[-1][0], 20.0)
+        self.assertAlmostEqual(res.joined_corner[-1][1], 0.0)
+
+        # Odległość między kolejnymi punktami nie powinna przekraczać 6.0 m (brak przeskoków w poprzek łuku)
+        for i in range(len(res.joined_corner) - 1):
+            seg_len = distance(res.joined_corner[i], res.joined_corner[i + 1])
+            self.assertLess(seg_len, 6.0, f"Spurious chord detected at segment {i}->{i+1} with length {seg_len:.2f}")
+
 
 if __name__ == '__main__':
     unittest.main()
+
